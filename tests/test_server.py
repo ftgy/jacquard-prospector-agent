@@ -86,6 +86,32 @@ def test_create_run_starts_and_returns_id(client, monkeypatch):
     assert calls == {"kind": "discover", "query": "agencies", "count": 5}
 
 
+def test_niches_validation(client):
+    assert client.post("/api/niches", json={"location": ""}).status_code == 422
+    assert client.post("/api/niches", json={"location": "X", "count": 99}).status_code == 422
+
+
+def test_niches_success(client, monkeypatch):
+    from prospector import service
+    monkeypatch.setattr(service, "suggest_niches_for",
+                        lambda location, count: [
+                            {"niche": f"agencies in {location}", "why": "w", "local_angle": "l"}])
+    r = client.post("/api/niches", json={"location": "Girona", "count": 6})
+    assert r.status_code == 200
+    assert r.json()["niches"][0]["niche"] == "agencies in Girona"
+
+
+def test_niches_api_error_returns_502(client, monkeypatch):
+    from prospector import service
+
+    def boom(location, count):
+        raise Exception("model exploded")
+    monkeypatch.setattr(service, "suggest_niches_for", boom)
+    r = client.post("/api/niches", json={"location": "Girona"})
+    assert r.status_code == 502
+    assert "exploded" in r.json()["detail"]
+
+
 def test_get_run_status(client):
     run_id = db.create_run("companies", "Acme", 1)
     db.set_run_total(run_id, 1)

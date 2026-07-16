@@ -126,6 +126,21 @@ def test_execute_run_catches_discovery_exception(monkeypatch):
     assert "exploded" in run["error"]
 
 
+def test_suggest_niches_for_passes_through(monkeypatch):
+    captured = {}
+
+    def fake_suggest(client, location, icp, count):
+        captured.update(location=location, count=count, icp=icp)
+        return [{"niche": "agencies in X", "why": "w", "local_angle": "l"}]
+
+    monkeypatch.setattr(service, "suggest_niches", fake_suggest)
+    out = service.suggest_niches_for("Bilbao", 5, client=FakeClient())
+
+    assert out[0]["niche"] == "agencies in X"
+    assert captured["location"] == "Bilbao" and captured["count"] == 5
+    assert captured["icp"] is service.ICP  # qualifies against the configured ICP
+
+
 def test_start_run_async_rejects_unknown_kind():
     with pytest.raises(ValueError):
         service.start_run_async("bogus", "x", 1, client=FakeClient())

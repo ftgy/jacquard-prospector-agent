@@ -147,6 +147,25 @@
   #runCount { width: 72px; }
   .run-hint { font-size: 12px; color: var(--muted); margin-top: 9px; font-family: var(--mono); }
 
+  /* niche finder */
+  .niche-finder { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--hairline); }
+  .nf-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .nf-label { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  #cityInput { flex: 1; min-width: 200px; }
+  .niche-results { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .niche-results:empty { margin-top: 0; }
+  .niche-chip {
+    border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--hairline));
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+    color: var(--ink); border-radius: 999px; padding: 7px 13px; cursor: pointer;
+    font-size: 13px; display: inline-flex; align-items: center; gap: 8px;
+    max-width: 100%; text-align: left; transition: border-color .15s, background .15s;
+  }
+  .niche-chip:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, var(--surface)); }
+  .niche-chip .plus { color: var(--accent); font-weight: 700; }
+  .niche-chip .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nf-note { font-size: 12px; color: var(--muted); font-family: var(--mono); width: 100%; }
+
   .run-live { margin-top: 14px; display: none; }
   .run-live.show { display: block; }
   .progress { height: 8px; background: var(--surface-2); border-radius: 5px; overflow: hidden;
@@ -312,6 +331,16 @@
       <button class="icon-btn primary" id="runBtn">▶ Run</button>
     </div>
     <div class="run-hint" id="runHint">Finds real companies in a niche, then researches & qualifies each against your ICP.</div>
+
+    <div class="niche-finder">
+      <div class="nf-row">
+        <span class="nf-label">Not sure where to start?</span>
+        <input type="text" id="cityInput" placeholder="Suggest niches in a city — e.g. Valencia">
+        <button class="icon-btn" id="nicheBtn">✦ Suggest niches</button>
+      </div>
+      <div class="niche-results" id="nicheResults"></div>
+    </div>
+
     <div class="run-live" id="runLive">
       <div class="progress"><i id="progFill"></i></div>
       <div class="meta"><span id="progText">Starting…</span><span id="progPct"></span></div>
@@ -507,6 +536,43 @@ document.querySelectorAll("#mode button").forEach(b => b.onclick = () => {
     ? "Finds real companies in a niche, then researches & qualifies each against your ICP."
     : "Researches & qualifies the exact companies you name (comma-separated).";
 });
+
+// --- niche finder ---
+$("#nicheBtn").onclick = async () => {
+  const location = $("#cityInput").value.trim();
+  if (!location){ toast("Enter a city first."); return; }
+  const btn = $("#nicheBtn"), box = $("#nicheResults");
+  btn.disabled = true; btn.textContent = "✦ Thinking…"; box.innerHTML = "";
+  try {
+    const res = await fetch("/api/niches", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ location })});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    const { niches } = await res.json();
+    renderNiches(niches, location);
+  } catch (e){ toast("Couldn't suggest niches: " + e.message); }
+  finally { btn.disabled = false; btn.textContent = "✦ Suggest niches"; }
+};
+$("#cityInput").addEventListener("keydown", e => { if (e.key === "Enter") $("#nicheBtn").click(); });
+
+function renderNiches(niches, location){
+  const box = $("#nicheResults"); box.innerHTML = "";
+  if (!niches || !niches.length){
+    box.innerHTML = `<span class="nf-note">No niches came back for “${esc(location)}”. Try a bigger city or region.</span>`;
+    return;
+  }
+  box.appendChild(el("span","nf-note",`${niches.length} niches for ${esc(location)} — click one to load it into discovery:`));
+  for (const n of niches){
+    const chip = el("button","niche-chip",`<span class="plus">+</span><span class="txt">${esc(n.niche)}</span>`);
+    chip.title = [n.why, n.local_angle].filter(Boolean).join("\n\n");
+    chip.onclick = () => {
+      document.querySelector('#mode button[data-mode="discover"]').click();
+      const q = $("#runQuery"); q.value = n.niche; q.focus();
+      q.scrollIntoView({ behavior: "smooth", block: "center" });
+      toast("Niche loaded — set a count and hit Run.");
+    };
+    box.appendChild(chip);
+  }
+}
 
 let polling = null;
 $("#runBtn").onclick = async () => {

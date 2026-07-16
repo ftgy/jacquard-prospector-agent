@@ -14,7 +14,7 @@ import threading
 import anthropic
 
 from . import db
-from .agent import discover_candidates, run_prospect
+from .agent import discover_candidates, run_prospect, suggest_niches
 from .config import make_client, using_proxy
 from .icp import ICP
 
@@ -110,3 +110,14 @@ def start_run_async(kind: str, query: str, count: int = 10,
         daemon=True,
     ).start()
     return run_id
+
+
+def suggest_niches_for(location: str, count: int = 8,
+                       client: anthropic.Anthropic | None = None) -> list:
+    """Suggest B2B niches for a location, ready to feed into a discovery run.
+
+    Synchronous and quick (a single reasoning call) — unlike a research run, so
+    the HTTP handler can return the niches directly.
+    """
+    client = client or make_client()
+    return suggest_niches(client, location, ICP, count)

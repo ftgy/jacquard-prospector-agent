@@ -201,6 +201,83 @@ def _dedupe(candidates: list) -> list:
     return out
 
 
+# --- Stage 0b: niche suggestion ----------------------------------------------
+
+NICHE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "niches": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "niche": {
+                        "type": "string",
+                        "description": "Ready-to-search niche phrase including the "
+                                       "location, e.g. 'independent recruiting "
+                                       "agencies in Barcelona'.",
+                    },
+                    "why": {
+                        "type": "string",
+                        "description": "Why this segment fits the ICP — the "
+                                       "automatable back-office pain and any buying signals.",
+                    },
+                    "local_angle": {
+                        "type": "string",
+                        "description": "What makes this niche notable in this "
+                                       "specific city or region.",
+                    },
+                },
+                "required": ["niche", "why", "local_angle"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["niches"],
+    "additionalProperties": False,
+}
+
+
+def _niche_system(icp: str) -> str:
+    return f"""You suggest promising B2B niches to prospect in a given city or \
+region. A niche is a concrete, searchable *segment* of businesses — an industry + \
+business-type — not a single company.
+
+Good niches are full of small-to-mid businesses with visible, automatable \
+back-office work, and fit the consultant's ICP below. For each niche:
+- Make `niche` a ready-to-search phrase that INCLUDES the location, so it can be
+  fed straight into company discovery (e.g. "boutique law firms in Valencia").
+- Grade honestly. Prefer segments with repetitive manual workflows and real budget
+  over glamorous-but-poor-fit ones.
+- Ground it in what the city is actually known for economically where you can.
+- Avoid sectors dominated by mega-corps or that are mostly large enterprises, and
+  avoid niches that are themselves AI-automation consultancies (competitors).
+
+Here is the ICP:
+{icp}"""
+
+
+def suggest_niches(client: anthropic.Anthropic, location: str, icp: str,
+                   count: int = 8) -> list:
+    """Propose searchable B2B niches for a location that fit the ICP.
+
+    This is a reasoning pass with NO web search: niche *ideation* draws on the
+    model's knowledge of a city's economy, unlike discovery which must find real,
+    verifiable companies on the web. Cheap and fast (one call) — a starting point.
+    Returns a list of {niche, why, local_angle}; each `niche` feeds
+    discover_candidates() directly.
+    """
+    result = _structure(
+        client,
+        _niche_system(icp),
+        f"Suggest about {count} B2B niches worth prospecting in: {location}.\n"
+        "Each niche must be concrete, searchable, and include the location.",
+        NICHE_SCHEMA,
+        max_tokens=4000,
+    )
+    return result.get("niches", [])
+
+
 # --- Stage 1: research -------------------------------------------------------
 
 RESEARCH_SYSTEM = """You are a sharp B2B prospect researcher. Given a company, \

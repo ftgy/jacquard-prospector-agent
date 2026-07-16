@@ -52,6 +52,11 @@ class RunRequest(BaseModel):
     count: int = Field(10, ge=1, le=50)
 
 
+class NicheRequest(BaseModel):
+    location: str = Field(..., min_length=1)
+    count: int = Field(8, ge=1, le=20)
+
+
 # --- prospects ---------------------------------------------------------------
 
 @app.get("/api/prospects")
@@ -91,6 +96,19 @@ def api_create_run(req: RunRequest):
     except SystemExit as e:  # make_client() with no API key
         raise HTTPException(400, str(e))
     return {"run_id": run_id}
+
+
+@app.post("/api/niches")
+def api_niches(req: NicheRequest):
+    """Suggest niches for a city — a fast, synchronous reasoning call (no run)."""
+    from .service import friendly_api_error, suggest_niches_for
+    try:
+        niches = suggest_niches_for(req.location, req.count)
+    except SystemExit as e:  # make_client() with no API key
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, friendly_api_error(e))
+    return {"niches": niches}
 
 
 @app.get("/api/runs")

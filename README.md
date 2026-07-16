@@ -74,6 +74,13 @@ Prospects are stored in a SQLite database (`prospector.db`) so runs accumulate
 over time. In the run panel you can **discover a niche** (find real companies,
 then research + qualify each) or **qualify named companies** directly.
 
+**Don't know where to start?** Type a city into *Suggest niches* and the agent
+proposes searchable niches grounded in that city's economy and your ICP (e.g.
+for Valencia: freight forwarders near the port, citrus exporters, the Castellón
+ceramic-tile cluster). Click one to load it straight into discovery. This is a
+single fast reasoning call — no web search — so it's cheap and instant; the
+grounded, real-company work happens later when you run discovery on the niche.
+
 **Cost tip:** discovery is ~2 API calls total, but qualification is ~2 calls
 *per company* — so a big discover-and-qualify run adds up. Start with a small
 count to sanity-check a niche before scaling it.
@@ -86,9 +93,10 @@ python scripts/import_results.py
 ```
 
 The panel shows ranked prospects with fit-signal meters and a tier breakdown,
-a detail drawer (pain points → agent solutions, buying signals, sources), and a
-run panel that discovers a niche or qualifies named companies, streaming results
-into the table as each company finishes. Both light and dark themes.
+a detail drawer (pain points → agent solutions, buying signals, sources), a
+niche suggester (city → clickable niches), and a run panel that discovers a niche
+or qualifies named companies, streaming results into the table as each company
+finishes. Both light and dark themes.
 
 ## How search works (and why it's swappable)
 
