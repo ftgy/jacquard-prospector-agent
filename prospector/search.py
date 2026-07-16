@@ -20,7 +20,7 @@ import os
 
 from openai import OpenAI
 
-from config import get_base_url
+from .config import get_base_url
 
 
 def get_search_backend() -> str:

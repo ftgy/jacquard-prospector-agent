@@ -19,7 +19,9 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "prospector.db"
+# Keep the store at the project root (one level up from this package), so it sits
+# beside .env / results.json regardless of where the package lives.
+DB_PATH = Path(__file__).resolve().parent.parent / "prospector.db"
 
 # Prospect fields kept as JSON text columns (nested / list-shaped).
 _JSON_FIELDS = ("pain_points", "buying_signals", "red_flags", "sources")

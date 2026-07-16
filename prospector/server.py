@@ -19,8 +19,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-import db
-from config import describe_target, load_env, make_client
+from . import db
+from .config import describe_target, load_env, make_client
 
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
@@ -85,7 +85,7 @@ def api_stats():
 @app.post("/api/runs")
 def api_create_run(req: RunRequest):
     # Import here so browsing works even if the agent stack can't be built.
-    from service import start_run_async
+    from .service import start_run_async
     try:
         run_id = start_run_async(req.kind, req.query, req.count)
     except SystemExit as e:  # make_client() with no API key

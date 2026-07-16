@@ -14,7 +14,8 @@ from pathlib import Path
 
 import anthropic
 
-HERE = Path(__file__).parent
+# Project root (one level up from this package) — where .env and the CSVs live.
+ROOT = Path(__file__).resolve().parent.parent
 
 # Override per-environment via .env. LiteLLM instances name models however their
 # config declares them, so the model is configurable rather than hard-coded.
@@ -23,7 +24,7 @@ DEFAULT_MODEL = "claude-opus-4-8"
 
 def load_env():
     """Minimal .env loader so you don't need python-dotenv."""
-    env = HERE / ".env"
+    env = ROOT / ".env"
     if env.exists():
         for line in env.read_text().splitlines():
             line = line.strip()

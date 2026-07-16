@@ -52,7 +52,7 @@ SEARCH_MODEL=gemini-3.5-flash
 ### Then verify your endpoint
 
 ```bash
-python check_setup.py
+python scripts/check_setup.py
 ```
 
 **Run this before anything else.** It lists the models your endpoint serves and
@@ -77,12 +77,34 @@ python main.py --companies "Acme Inc" "Globex Corp"
 python main.py --file prospects.csv
 ```
 
-It prints a ranked report to the terminal and writes full details (including
-research summaries and source URLs) to `results.json`.
+It prints a ranked report to the terminal, writes full details (including
+research summaries and source URLs) to `results.json`, **and stores every
+prospect in a SQLite database** (`prospector.db`) so runs accumulate over time.
+Pass `--no-db` to skip the database for a run.
 
 **Tip:** run `--discover-only` first to sanity-check the niche and eyeball the
 company list, then re-run without it to qualify. Discovery is ~2 API calls total;
 qualification is ~2 calls *per company*, so previewing first saves real money.
+
+## Dashboard
+
+A browser panel for the stored prospects — browse, filter, and launch new
+research runs with live progress.
+
+```bash
+python run_server.py          # then open http://127.0.0.1:8000
+```
+
+To backfill the dashboard from an existing `results.json`:
+
+```bash
+python scripts/import_results.py
+```
+
+The panel shows ranked prospects with fit-signal meters and a tier breakdown,
+a detail drawer (pain points → agent solutions, buying signals, sources), and a
+run panel that discovers a niche or qualifies named companies, streaming results
+into the table as each company finishes. Both light and dark themes.
 
 ## How search works (and why it's swappable)
 
@@ -105,20 +127,27 @@ doesn't apply and its grounding works. `check_setup.py` verifies which you have.
 
 ## Tune your targeting
 
-Edit **`icp.py`** — that one file describes who you are and what a good-fit
-client looks like. The qualifier reads it verbatim; the sharper it is, the
-better the scores. No other code needs to change.
+Edit **`prospector/icp.py`** — that one file describes who you are and what a
+good-fit client looks like. The qualifier reads it verbatim; the sharper it is,
+the better the scores. No other code needs to change.
 
 ## Project layout
 
-| File          | What it does |
-|---------------|--------------|
-| `icp.py`      | Your Ideal Customer Profile — **edit this to change targeting**. |
-| `config.py`   | Client + model setup; switches between Anthropic and LiteLLM. |
-| `search.py`   | Grounded web search; swappable backend (Gemini / Anthropic). |
-| `check_setup.py` | Diagnostic: what your endpoint serves and supports. **Run first.** |
-| `agent.py`    | Core: `discover_candidates()`, `research_company()`, `qualify_company()`, `run_prospect()`. |
-| `main.py`     | CLI: discovers/reads prospects, runs the pipeline, prints + saves results. |
+The code lives in a `prospector/` package; entry points sit at the project root.
+
+| Path | What it does |
+|------|--------------|
+| `prospector/icp.py`     | Your Ideal Customer Profile — **edit this to change targeting**. |
+| `prospector/config.py`  | Client + model setup; switches between Anthropic and LiteLLM. |
+| `prospector/search.py`  | Grounded web search; swappable backend (Gemini / Anthropic). |
+| `prospector/agent.py`   | Core: `discover_candidates()`, `research_company()`, `qualify_company()`, `run_prospect()`. |
+| `prospector/db.py`      | SQLite persistence (`prospector.db`): prospects + runs. |
+| `prospector/service.py` | Bridges the agent and the database; shared by the CLI and the web server. |
+| `prospector/server.py`  | FastAPI backend + dashboard (`prospector/static/index.html`). |
+| `main.py`               | CLI entry: discovers/reads prospects, runs the pipeline, prints + saves. |
+| `run_server.py`         | Web entry: launches the dashboard server. |
+| `scripts/check_setup.py`   | Diagnostic: what your endpoint serves and supports. **Run first.** |
+| `scripts/import_results.py`| Backfill the database from an existing `results.json`. |
 | `prospects.example.csv` | Sample input; copy to `prospects.csv` and fill in your leads. |
 
 ## Troubleshooting

@@ -13,13 +13,13 @@ import json
 import sys
 from pathlib import Path
 
-import db
-
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))  # find prospector/
+from prospector import db
 
 
 def main():
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "results.json"
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "results.json"
     if not path.exists():
         sys.exit(f"No results file at {path}. Nothing to import.")
 

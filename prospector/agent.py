@@ -18,8 +18,8 @@ import re
 
 import anthropic
 
-from config import get_model, get_web_search_tool, use_native_structured_output
-from search import get_search_backend, grounded_search
+from .config import get_model, get_web_search_tool, use_native_structured_output
+from .search import get_search_backend, grounded_search
 
 
 def _web_search_tool() -> dict:

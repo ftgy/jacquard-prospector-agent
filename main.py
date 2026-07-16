@@ -18,11 +18,11 @@ import os
 import sys
 from pathlib import Path
 
-import db
-from agent import discover_candidates
-from config import describe_target, load_env, make_client
-from icp import ICP
-from service import friendly_api_error, run_batch
+from prospector import db
+from prospector.agent import discover_candidates
+from prospector.config import describe_target, load_env, make_client
+from prospector.icp import ICP
+from prospector.service import friendly_api_error, run_batch
 
 HERE = Path(__file__).parent
 

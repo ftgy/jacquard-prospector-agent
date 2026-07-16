@@ -16,10 +16,10 @@ from typing import Callable
 
 import anthropic
 
-import db
-from agent import discover_candidates, run_prospect
-from config import make_client, using_proxy
-from icp import ICP
+from . import db
+from .agent import discover_candidates, run_prospect
+from .config import make_client, using_proxy
+from .icp import ICP
 
 
 def friendly_api_error(e: Exception) -> str:

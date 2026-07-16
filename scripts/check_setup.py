@@ -13,10 +13,13 @@ this tells you which, before you burn a full run finding out.
 
 import json
 import sys
+from pathlib import Path
 
 import anthropic
 
-from config import describe_target, get_base_url, get_model, load_env, make_client, using_proxy
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # find prospector/
+from prospector.config import (describe_target, get_base_url, get_model, load_env,
+                               make_client, using_proxy)
 
 PASS, FAIL, WARN = "\033[32mPASS\033[0m", "\033[31mFAIL\033[0m", "\033[33mWARN\033[0m"
 
@@ -120,7 +123,7 @@ def check_structured(client):
         line("native output_config.format", WARN, f"unsupported: {short(e, 80)}")
 
     # What actually matters: can the agent get reliable JSON either way?
-    from agent import _structure  # imported late so this file works standalone
+    from prospector.agent import _structure  # imported late so this file works standalone
     try:
         out = _structure(client, "You answer geography questions.",
                          "Capital of France?", schema, 256)
@@ -135,7 +138,7 @@ def check_structured(client):
 
 def check_search(client):
     """Verify the configured search backend actually reaches the live web."""
-    from search import get_search_backend, get_search_model
+    from prospector.search import get_search_backend, get_search_model
     backend = get_search_backend()
     print(f"\n5. Web search — backend: {backend} (research + discovery need this)")
     if backend == "gemini":
@@ -150,7 +153,7 @@ def check_gemini_search():
     trivial question ("what's today's date?") gets answered from context with no
     citations — which looks identical to grounding being switched off.
     """
-    from search import get_search_model, grounded_search
+    from prospector.search import get_search_model, grounded_search
     try:
         out = grounded_search(
             "You are a web researcher. Cite your sources.",
