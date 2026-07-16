@@ -1,9 +1,15 @@
 .venv/
+venv/
 .env
 results.json
 prospects.csv
 __pycache__/
 *.pyc
+
+# SQLite store (+ WAL/SHM sidecar files)
+prospector.db
+prospector.db-wal
+prospector.db-shm
 
 # Editor / IDE
 .idea/
