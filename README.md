@@ -115,6 +115,18 @@ Edit **`prospector/icp.py`** — that one file describes who you are and what a
 good-fit client looks like. The qualifier reads it verbatim; the sharper it is,
 the better the scores. No other code needs to change.
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The suite covers persistence, the service/orchestration layer, the HTTP API, and
+the JSON-parsing helpers. It never hits the model or the network: each test runs
+against a throwaway SQLite file, and the agent's model calls are stubbed — so the
+tests are fast and free to run.
+
 ## Project layout
 
 The code lives in a `prospector/` package; entry points sit at the project root.

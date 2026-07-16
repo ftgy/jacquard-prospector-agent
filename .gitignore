@@ -5,6 +5,7 @@ results.json
 prospects.csv
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # SQLite store (+ WAL/SHM sidecar files)
 prospector.db
