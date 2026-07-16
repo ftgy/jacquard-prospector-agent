@@ -1,0 +1,549 @@
+<title>Prospector — qualification console</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    color-scheme: light dark;
+    --plane:        #f4f2ec;
+    --surface:      #fcfcfb;
+    --surface-2:    #f0eee7;
+    --ink:          #16150f;
+    --ink-2:        #52514a;
+    --muted:        #8a887f;
+    --hairline:     rgba(20,19,12,0.12);
+    --hairline-2:   rgba(20,19,12,0.06);
+    --accent:       #1f5fd6;   /* console blue */
+    --accent-ink:   #123a86;
+
+    --tier-a:       #0ca30c;
+    --tier-b:       #1f5fd6;
+    --tier-c:       #d98a12;
+    --tier-d:       #cf3b3b;   /* disqualified */
+
+    --shadow:       0 1px 2px rgba(20,19,12,.06), 0 8px 30px rgba(20,19,12,.07);
+    --mono:         ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, monospace;
+    --sans:         system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      --plane:      #0e0e0c;
+      --surface:    #1a1a17;
+      --surface-2:  #232320;
+      --ink:        #f3f2ea;
+      --ink-2:      #b6b4a8;
+      --muted:      #86847b;
+      --hairline:   rgba(255,255,255,0.13);
+      --hairline-2: rgba(255,255,255,0.06);
+      --accent:     #5c94f0;
+      --accent-ink: #9dbdf6;
+      --tier-a:     #2fbb2f; --tier-b: #5c94f0; --tier-c: #eaa93a; --tier-d: #e26060;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --plane:#0e0e0c; --surface:#1a1a17; --surface-2:#232320;
+    --ink:#f3f2ea; --ink-2:#b6b4a8; --muted:#86847b;
+    --hairline:rgba(255,255,255,0.13); --hairline-2:rgba(255,255,255,0.06);
+    --accent:#5c94f0; --accent-ink:#9dbdf6;
+    --tier-a:#2fbb2f; --tier-b:#5c94f0; --tier-c:#eaa93a; --tier-d:#e26060;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--plane); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  button { font-family: inherit; }
+  ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 80px; }
+
+  /* --- masthead --- */
+  header.mast {
+    border-bottom: 1px solid var(--hairline);
+    background: var(--surface);
+    position: sticky; top: 0; z-index: 20;
+  }
+  .mast-in {
+    max-width: 1180px; margin: 0 auto; padding: 14px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--tier-a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tier-a) 22%, transparent);
+    align-self: center;
+  }
+  .brand h1 {
+    font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -.01em;
+  }
+  .brand .sub {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    letter-spacing: .02em;
+  }
+  .mast-spacer { flex: 1; }
+  .icon-btn {
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    color: var(--ink-2); border-radius: 8px; padding: 7px 11px; cursor: pointer;
+    font-size: 13px; display: inline-flex; align-items: center; gap: 7px;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--ink); }
+  .icon-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .icon-btn.primary:hover { filter: brightness(1.06); }
+
+  /* --- stat rail --- */
+  .stats {
+    display: grid; grid-template-columns: 1.2fr repeat(4, 1fr) 1.1fr; gap: 1px;
+    background: var(--hairline); border: 1px solid var(--hairline);
+    border-radius: 12px; overflow: hidden; margin: 24px 0 20px; box-shadow: var(--shadow);
+  }
+  .stat { background: var(--surface); padding: 14px 16px; }
+  .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .stat .v { font-size: 26px; font-weight: 650; letter-spacing: -.02em; margin-top: 3px;
+             font-variant-numeric: tabular-nums; }
+  .stat .v small { font-size: 13px; color: var(--muted); font-weight: 500; }
+  .stat.tierA .v { color: var(--tier-a); }
+  .stat.tierB .v { color: var(--tier-b); }
+  .stat.tierC .v { color: var(--tier-c); }
+  .stat.tierD .v { color: var(--tier-d); }
+  /* the one chart: a tier distribution bar */
+  .stat.dist { display: flex; flex-direction: column; justify-content: center; }
+  .distbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin-top: 8px;
+             background: var(--surface-2); gap: 2px; }
+  .distbar span { display: block; }
+  .distbar .sA { background: var(--tier-a); }
+  .distbar .sB { background: var(--tier-b); }
+  .distbar .sC { background: var(--tier-c); }
+  .distbar .sD { background: var(--tier-d); }
+
+  /* --- run panel --- */
+  .panel {
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 20px; box-shadow: var(--shadow);
+  }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+              color: var(--muted); margin: 0 0 12px; }
+  .run-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--hairline);
+         border-radius: 8px; padding: 2px; }
+  .seg button {
+    border: 0; background: transparent; color: var(--ink-2); padding: 6px 12px;
+    border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;
+  }
+  .seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+  input[type=text], input[type=number] {
+    font-family: inherit; font-size: 14px; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 8px 11px;
+  }
+  input[type=text]:focus, input[type=number]:focus {
+    outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px;
+    border-color: var(--accent);
+  }
+  #runQuery { flex: 1; min-width: 220px; }
+  #runCount { width: 72px; }
+  .run-hint { font-size: 12px; color: var(--muted); margin-top: 9px; font-family: var(--mono); }
+
+  .run-live { margin-top: 14px; display: none; }
+  .run-live.show { display: block; }
+  .progress { height: 8px; background: var(--surface-2); border-radius: 5px; overflow: hidden;
+              border: 1px solid var(--hairline); }
+  .progress i { display: block; height: 100%; background: var(--accent);
+                width: 0%; transition: width .4s ease; }
+  .run-live .meta { display: flex; justify-content: space-between; font-family: var(--mono);
+                    font-size: 12px; color: var(--ink-2); margin-top: 7px; }
+
+  /* --- filters --- */
+  .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip {
+    border: 1px solid var(--hairline); background: var(--surface); color: var(--ink-2);
+    border-radius: 999px; padding: 5px 13px; cursor: pointer; font-size: 13px;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .chip .swatch { width: 8px; height: 8px; border-radius: 50%; }
+  .filters .grow { flex: 1; }
+  .filters .slider { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); }
+  .filters input[type=range] { accent-color: var(--accent); }
+  #search { min-width: 180px; }
+
+  /* --- table --- */
+  .tablewrap { background: var(--surface); border: 1px solid var(--hairline);
+               border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 720px; }
+  thead th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); font-weight: 600; padding: 11px 16px;
+    border-bottom: 1px solid var(--hairline); background: var(--surface); position: sticky; top: 0;
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  thead th.sortable:hover { color: var(--ink); }
+  thead th .caret { opacity: .55; font-size: 10px; }
+  tbody tr { border-bottom: 1px solid var(--hairline-2); cursor: pointer; }
+  tbody tr:last-child { border-bottom: 0; }
+  tbody tr:hover { background: var(--surface-2); }
+  td { padding: 12px 16px; vertical-align: middle; }
+  td.co { font-weight: 600; letter-spacing: -.01em; }
+  td.co .line { display: block; font-weight: 400; color: var(--ink-2); font-size: 12.5px;
+                margin-top: 2px; max-width: 460px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tier {
+    font-family: var(--mono); font-size: 12px; font-weight: 700; width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center; border-radius: 6px;
+    color: #fff;
+  }
+  .tier.A { background: var(--tier-a); } .tier.B { background: var(--tier-b); }
+  .tier.C { background: var(--tier-c); } .tier.disqualified,.tier.X { background: var(--tier-d); }
+  .tier.err { background: var(--muted); }
+  /* fit-signal meter — signature element */
+  .fit { display: flex; align-items: center; gap: 10px; min-width: 150px; }
+  .fit .num { font-family: var(--mono); font-variant-numeric: tabular-nums;
+              font-size: 13px; font-weight: 600; width: 26px; text-align: right; }
+  .meter { flex: 1; height: 8px; background: var(--surface-2); border-radius: 5px; overflow: hidden;
+           position: relative; border: 1px solid var(--hairline-2); }
+  .meter i { display: block; height: 100%; border-radius: 5px; }
+  .conf { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; }
+  .conf b { color: var(--ink-2); font-weight: 600; }
+
+  .empty { padding: 60px 24px; text-align: center; color: var(--muted); }
+  .empty b { color: var(--ink); font-weight: 600; }
+
+  /* --- drawer --- */
+  .scrim { position: fixed; inset: 0; background: rgba(10,10,8,.4); backdrop-filter: blur(2px);
+           opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 40; }
+  .scrim.show { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; height: 100%; width: min(560px, 94vw);
+    background: var(--surface); border-left: 1px solid var(--hairline); z-index: 50;
+    transform: translateX(100%); transition: transform .26s cubic-bezier(.4,0,.2,1);
+    display: flex; flex-direction: column; box-shadow: -20px 0 60px rgba(0,0,0,.16);
+  }
+  .drawer.show { transform: translateX(0); }
+  .drawer .dhead { padding: 20px 22px 16px; border-bottom: 1px solid var(--hairline); }
+  .drawer .dhead .row { display: flex; align-items: flex-start; gap: 12px; }
+  .drawer h3 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
+  .drawer .dbody { overflow-y: auto; padding: 18px 22px 40px; }
+  .drawer .close { margin-left: auto; background: none; border: 0; color: var(--muted);
+                   font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px; }
+  .drawer .close:hover { color: var(--ink); }
+  .verdict { color: var(--ink-2); margin: 6px 0 0; }
+  .sec { margin-top: 22px; }
+  .sec h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+            margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .sec h4::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
+  .pain { border: 1px solid var(--hairline); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+          background: var(--surface-2); }
+  .pain .p { font-weight: 600; }
+  .pain .ev { color: var(--ink-2); font-size: 12.5px; margin: 4px 0; }
+  .pain .sol { font-size: 13px; border-left: 2px solid var(--accent); padding-left: 10px; margin-top: 8px; }
+  .pain .sol b { color: var(--accent-ink); }
+  ul.plain { list-style: none; padding: 0; margin: 0; }
+  ul.plain li { padding: 7px 0 7px 20px; position: relative; border-bottom: 1px solid var(--hairline-2);
+                font-size: 13px; color: var(--ink-2); }
+  ul.plain li:last-child { border-bottom: 0; }
+  ul.plain li::before { content: ""; position: absolute; left: 4px; top: 14px;
+                        width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  ul.plain.flags li::before { background: var(--tier-d); }
+  .angle { background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+           border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--hairline));
+           border-radius: 10px; padding: 13px 15px; font-size: 13.5px; }
+  .summary { white-space: pre-wrap; font-size: 13px; color: var(--ink-2); line-height: 1.6; }
+  .sources a { display: block; font-family: var(--mono); font-size: 12px; padding: 5px 0;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .errbox { background: color-mix(in srgb, var(--tier-d) 10%, var(--surface));
+            border: 1px solid color-mix(in srgb, var(--tier-d) 35%, transparent);
+            border-radius: 10px; padding: 12px 14px; color: var(--ink); font-family: var(--mono);
+            font-size: 12.5px; white-space: pre-wrap; }
+
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+           background: var(--ink); color: var(--surface); padding: 10px 18px; border-radius: 10px;
+           font-size: 13px; opacity: 0; transition: all .25s; z-index: 60; box-shadow: var(--shadow); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 780px) {
+    .stats { grid-template-columns: 1fr 1fr; }
+    .stat.dist { grid-column: 1 / -1; }
+  }
+</style>
+
+<header class="mast">
+  <div class="mast-in">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Prospector</h1>
+      <span class="sub" id="target">qualification console</span>
+    </div>
+    <div class="mast-spacer"></div>
+    <button class="icon-btn" id="themeBtn" title="Toggle theme">◐ Theme</button>
+    <button class="icon-btn" id="refreshBtn" title="Refresh">↻ Refresh</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- stat rail -->
+  <section class="stats" id="stats" aria-label="Summary">
+    <div class="stat"><div class="k">Prospects</div><div class="v" id="s-total">—</div></div>
+    <div class="stat tierA"><div class="k">Tier A</div><div class="v" id="s-a">—</div></div>
+    <div class="stat tierB"><div class="k">Tier B</div><div class="v" id="s-b">—</div></div>
+    <div class="stat tierC"><div class="k">Tier C</div><div class="v" id="s-c">—</div></div>
+    <div class="stat tierD"><div class="k">Disqualified</div><div class="v" id="s-d">—</div></div>
+    <div class="stat dist">
+      <div class="k">Avg fit · mix</div>
+      <div class="v" id="s-avg" style="font-size:20px">—<small>/100</small></div>
+      <div class="distbar" id="distbar" title="Tier distribution"></div>
+    </div>
+  </section>
+
+  <!-- run panel -->
+  <section class="panel">
+    <h2>Launch research run</h2>
+    <div class="run-row">
+      <div class="seg" id="mode">
+        <button data-mode="discover" class="on">Discover a niche</button>
+        <button data-mode="companies">Specific companies</button>
+      </div>
+      <input type="text" id="runQuery" placeholder="e.g. recruiting agencies in Barcelona">
+      <input type="number" id="runCount" value="8" min="1" max="50" title="How many to discover">
+      <button class="icon-btn primary" id="runBtn">▶ Run</button>
+    </div>
+    <div class="run-hint" id="runHint">Finds real companies in a niche, then researches & qualifies each against your ICP.</div>
+    <div class="run-live" id="runLive">
+      <div class="progress"><i id="progFill"></i></div>
+      <div class="meta"><span id="progText">Starting…</span><span id="progPct"></span></div>
+    </div>
+  </section>
+
+  <!-- filters -->
+  <div class="filters">
+    <span class="chip on" data-tier="" >All</span>
+    <span class="chip" data-tier="A"><span class="swatch" style="background:var(--tier-a)"></span>A</span>
+    <span class="chip" data-tier="B"><span class="swatch" style="background:var(--tier-b)"></span>B</span>
+    <span class="chip" data-tier="C"><span class="swatch" style="background:var(--tier-c)"></span>C</span>
+    <span class="chip" data-tier="disqualified"><span class="swatch" style="background:var(--tier-d)"></span>DQ</span>
+    <div class="slider">min fit <input type="range" id="minScore" min="0" max="100" value="0" step="5"><b id="minScoreV" style="color:var(--ink-2);font-family:var(--mono)">0</b></div>
+    <span class="grow"></span>
+    <input type="text" id="search" placeholder="Search company…">
+  </div>
+
+  <!-- table -->
+  <div class="tablewrap">
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="company">Company <span class="caret"></span></th>
+            <th>Tier</th>
+            <th class="sortable" data-sort="fit">Fit signal <span class="caret">▾</span></th>
+            <th>Confidence</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="empty" style="display:none">
+      <b>No prospects yet.</b><br>Launch a research run above to start building your pipeline.
+    </div>
+  </div>
+</div>
+
+<!-- drawer -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Prospect detail">
+  <div class="dhead">
+    <div class="row">
+      <span class="tier" id="d-tier">—</span>
+      <div>
+        <h3 id="d-company">—</h3>
+        <div class="verdict" id="d-oneline"></div>
+      </div>
+      <button class="close" id="d-close" aria-label="Close">×</button>
+    </div>
+    <div class="fit" style="margin-top:14px">
+      <span class="num" id="d-score">—</span>
+      <div class="meter"><i id="d-meter"></i></div>
+      <span class="conf">conf <b id="d-conf">—</b></span>
+    </div>
+  </div>
+  <div class="dbody" id="d-body"></div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };
+const esc = s => (s ?? "").toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tierClass = t => t === 'disqualified' ? 'disqualified' : (t || 'err');
+const tierLabel = t => t === 'disqualified' ? 'DQ' : (t || '!');
+function fitColor(t){ return t==='A'?'var(--tier-a)':t==='B'?'var(--tier-b)':t==='C'?'var(--tier-c)':'var(--tier-d)'; }
+
+const state = { tier: "", minScore: 0, q: "", sort: "fit", mode: "discover" };
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2600); }
+
+// --- theme ---
+$("#themeBtn").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+};
+
+// --- stats ---
+async function loadStats(){
+  const s = await fetch("/api/stats").then(r=>r.json());
+  $("#s-total").textContent = s.total;
+  $("#s-a").textContent = s.by_tier.A;
+  $("#s-b").textContent = s.by_tier.B;
+  $("#s-c").textContent = s.by_tier.C;
+  $("#s-d").textContent = s.by_tier.disqualified;
+  $("#s-avg").innerHTML = (s.avg_fit ?? "—") + "<small>/100</small>";
+  const bar = $("#distbar"); bar.innerHTML = "";
+  const cls = {A:"sA",B:"sB",C:"sC",disqualified:"sD"};
+  const tot = ["A","B","C","disqualified"].reduce((a,t)=>a+s.by_tier[t],0) || 1;
+  for (const t of ["A","B","C","disqualified"]) {
+    const n = s.by_tier[t]; if (!n) continue;
+    const seg = el("span", cls[t]); seg.style.flex = n; seg.title = `Tier ${t}: ${n}`;
+    bar.appendChild(seg);
+  }
+}
+
+// --- table ---
+async function loadRows(){
+  const p = new URLSearchParams();
+  if (state.tier) p.set("tier", state.tier);
+  if (state.minScore) p.set("min_score", state.minScore);
+  if (state.q) p.set("q", state.q);
+  p.set("sort", state.sort);
+  const rows = await fetch("/api/prospects?"+p).then(r=>r.json());
+  const tb = $("#rows"); tb.innerHTML = "";
+  $("#empty").style.display = rows.length ? "none" : "block";
+  for (const r of rows){
+    const tr = el("tr");
+    const isErr = r.error != null;
+    const score = r.fit_score ?? 0;
+    tr.innerHTML = `
+      <td class="co">${esc(r.company)}<span class="line">${isErr ? "⚠ "+esc(r.error) : esc(r.one_line)}</span></td>
+      <td><span class="tier ${isErr?'err':tierClass(r.tier)}">${isErr?'!':tierLabel(r.tier)}</span></td>
+      <td>${isErr ? '<span class="conf">—</span>' : `<div class="fit"><span class="num">${score}</span>
+           <div class="meter"><i style="width:${score}%;background:${fitColor(r.tier)}"></i></div></div>`}</td>
+      <td><span class="conf">${isErr?'—':esc(r.confidence||'—')}</span></td>`;
+    tr.onclick = () => openDrawer(r.id);
+    tb.appendChild(tr);
+  }
+}
+
+// --- drawer ---
+async function openDrawer(id){
+  const r = await fetch("/api/prospects/"+id).then(x=>x.json());
+  const isErr = r.error != null;
+  $("#d-company").textContent = r.company;
+  $("#d-oneline").textContent = isErr ? "" : (r.one_line || "");
+  const tierEl = $("#d-tier");
+  tierEl.className = "tier " + (isErr ? "err" : tierClass(r.tier));
+  tierEl.textContent = isErr ? "!" : tierLabel(r.tier);
+  $("#d-score").textContent = isErr ? "—" : (r.fit_score ?? "—");
+  $("#d-conf").textContent = isErr ? "—" : (r.confidence || "—");
+  const m = $("#d-meter"); m.style.width = (isErr?0:(r.fit_score||0))+"%"; m.style.background = fitColor(r.tier);
+
+  const body = $("#d-body"); body.innerHTML = "";
+  if (isErr){
+    body.appendChild(sec("Research failed", `<div class="errbox">${esc(r.error)}</div>`));
+  } else {
+    if (r.outreach_angle) body.appendChild(sec("Outreach angle", `<div class="angle">${esc(r.outreach_angle)}</div>`));
+    if (r.pain_points?.length){
+      const h = r.pain_points.map(p=>`<div class="pain"><div class="p">${esc(p.pain)}</div>
+        <div class="ev">${esc(p.evidence)}</div>
+        <div class="sol"><b>Agent →</b> ${esc(p.agent_solution)}</div></div>`).join("");
+      body.appendChild(sec("Pain points an agent could solve", h));
+    }
+    if (r.buying_signals?.length)
+      body.appendChild(sec("Buying signals", `<ul class="plain">${r.buying_signals.map(s=>`<li>${esc(s)}</li>`).join("")}</ul>`));
+    if (r.red_flags?.length)
+      body.appendChild(sec("Red flags", `<ul class="plain flags">${r.red_flags.map(s=>`<li>${esc(s)}</li>`).join("")}</ul>`));
+    if (r.research_summary)
+      body.appendChild(sec("Research summary", `<div class="summary">${esc(r.research_summary)}</div>`));
+    if (r.sources?.length)
+      body.appendChild(sec(`Sources (${r.sources.length})`,
+        `<div class="sources">${r.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`).join("")}</div>`));
+  }
+  $("#scrim").classList.add("show");
+  $("#drawer").classList.add("show");
+}
+function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
+function closeDrawer(){ $("#scrim").classList.remove("show"); $("#drawer").classList.remove("show"); }
+$("#d-close").onclick = closeDrawer; $("#scrim").onclick = closeDrawer;
+addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+
+// --- filters wiring ---
+document.querySelectorAll(".chip[data-tier]").forEach(c => c.onclick = () => {
+  document.querySelectorAll(".chip[data-tier]").forEach(x=>x.classList.remove("on"));
+  c.classList.add("on"); state.tier = c.dataset.tier; loadRows();
+});
+$("#minScore").oninput = e => { state.minScore = +e.target.value; $("#minScoreV").textContent = e.target.value; };
+$("#minScore").onchange = () => loadRows();
+let searchT; $("#search").oninput = e => { clearTimeout(searchT); state.q = e.target.value.trim();
+  searchT = setTimeout(loadRows, 250); };
+document.querySelectorAll("th.sortable").forEach(th => th.onclick = () => {
+  state.sort = th.dataset.sort; loadRows();
+  document.querySelectorAll("th .caret").forEach(c=>c.textContent="");
+  th.querySelector(".caret").textContent = "▾";
+});
+$("#refreshBtn").onclick = () => { loadStats(); loadRows(); };
+
+// --- run panel wiring ---
+document.querySelectorAll("#mode button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#mode button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); state.mode = b.dataset.mode;
+  const disc = state.mode === "discover";
+  $("#runQuery").placeholder = disc ? "e.g. recruiting agencies in Barcelona"
+                                    : "Acme Inc, Globex, Initech";
+  $("#runCount").style.display = disc ? "" : "none";
+  $("#runHint").textContent = disc
+    ? "Finds real companies in a niche, then researches & qualifies each against your ICP."
+    : "Researches & qualifies the exact companies you name (comma-separated).";
+});
+
+let polling = null;
+$("#runBtn").onclick = async () => {
+  const query = $("#runQuery").value.trim();
+  if (!query){ toast("Enter a niche or company names first."); return; }
+  const body = { kind: state.mode, query, count: +$("#runCount").value || 8 };
+  $("#runBtn").disabled = true;
+  try {
+    const res = await fetch("/api/runs", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    const { run_id } = await res.json();
+    $("#runLive").classList.add("show");
+    pollRun(run_id);
+  } catch (e){ toast("Couldn't start run: " + e.message); $("#runBtn").disabled = false; }
+};
+
+function pollRun(id){
+  clearInterval(polling);
+  polling = setInterval(async () => {
+    const run = await fetch("/api/runs/"+id).then(r=>r.json());
+    const total = run.total || 0, done = run.completed || 0;
+    const pct = total ? Math.round(done/total*100) : (run.status==="running"? 8 : 0);
+    $("#progFill").style.width = pct + "%";
+    $("#progPct").textContent = total ? `${done}/${total}` : "";
+    if (run.status === "running")
+      $("#progText").textContent = total ? "Researching & qualifying…" : "Discovering companies…";
+    if (done !== pollRun._last){ pollRun._last = done; loadStats(); loadRows(); }
+    if (run.status !== "running"){
+      clearInterval(polling);
+      $("#runBtn").disabled = false;
+      if (run.status === "error"){ $("#progText").textContent = "Run failed"; toast(run.error || "Run failed"); }
+      else { $("#progText").textContent = "Done"; $("#progFill").style.width = "100%"; toast("Run complete."); }
+      loadStats(); loadRows();
+      setTimeout(()=>$("#runLive").classList.remove("show"), 4000);
+    }
+  }, 2500);
+}
+
+loadStats(); loadRows();
+</script>

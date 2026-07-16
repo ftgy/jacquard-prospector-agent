@@ -18,38 +18,13 @@ import os
 import sys
 from pathlib import Path
 
-import anthropic
-
-from agent import discover_candidates, run_prospect
-from config import describe_target, load_env, make_client, using_proxy
+import db
+from agent import discover_candidates
+from config import describe_target, load_env, make_client
 from icp import ICP
+from service import friendly_api_error, run_batch
 
 HERE = Path(__file__).parent
-
-
-def friendly_api_error(e: Exception) -> str:
-    """Turn common API failures into something actionable instead of a traceback."""
-    msg = str(e)
-    if isinstance(e, anthropic.APIConnectionError):
-        cause = repr(e.__cause__ or "")
-        if "CERTIFICATE_VERIFY_FAILED" in cause:
-            return ("TLS verification failed — this network likely runs an intercepting "
-                    "proxy. Point Python at your system CA bundle:\n"
-                    "  export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt")
-        return f"Could not reach the API (check your network): {msg}"
-    if isinstance(e, anthropic.AuthenticationError):
-        return "ANTHROPIC_API_KEY is invalid or revoked. Check .env / console.anthropic.com."
-    if "credit balance is too low" in msg:
-        return ("Your Anthropic account is out of credits. Add credits at\n"
-                "  https://console.anthropic.com -> Plans & Billing\n"
-                "(Or point ANTHROPIC_BASE_URL at your LiteLLM instance instead.)")
-    if isinstance(e, anthropic.RateLimitError):
-        return "Rate limited. Wait a moment and retry, or lower --count."
-    if isinstance(e, anthropic.NotFoundError) and using_proxy():
-        return (f"Endpoint or model not found on the proxy: {msg}\n"
-                "Run `python check_setup.py` to list models it actually serves, "
-                "then set PROSPECT_MODEL in .env.")
-    return msg
 
 
 def read_prospects(path: Path) -> list:
@@ -106,11 +81,16 @@ def main():
                     help="List discovered companies without qualifying them (cheap preview).")
     ap.add_argument("--out", type=Path, default=HERE / "results.json",
                     help="Where to write full JSON results.")
+    ap.add_argument("--no-db", action="store_true",
+                    help="Skip writing results to the SQLite store (prospector.db).")
     args = ap.parse_args()
 
     load_env()
     client = make_client()
     print(f"Using {describe_target()}")
+
+    if not args.no_db:
+        db.init_db()
 
     if args.discover:
         print(f"Discovering ~{args.count} companies for: {args.discover}...", flush=True)
@@ -138,15 +118,30 @@ def main():
     if not prospects:
         sys.exit("No prospects to process.")
 
-    results = []
-    for i, p in enumerate(prospects, 1):
-        print(f"[{i}/{len(prospects)}] Researching {p['company']}...", flush=True)
-        try:
-            results.append(run_prospect(client, p["company"], ICP, p["hint"]))
-        except Exception as e:  # one bad company shouldn't kill the batch
-            reason = friendly_api_error(e)
-            print(f"    failed: {reason}", flush=True)
-            results.append({"company": p["company"], "error": reason})
+    # Track this CLI batch as a run so it shows up in the dashboard alongside
+    # web-launched runs. run_batch persists each result and bumps progress.
+    run_id = None
+    if not args.no_db:
+        if args.discover:
+            kind, query = "discover", args.discover
+        else:
+            kind, query = "companies", ", ".join(p["company"] for p in prospects)
+        run_id = db.create_run(kind, query, len(prospects))
+        db.set_run_total(run_id, len(prospects))
+
+    def _log(rec):
+        n = _log.i = getattr(_log, "i", 0) + 1
+        if "error" in rec:
+            print(f"[{n}/{len(prospects)}] {rec['company']} — failed: {rec['error']}", flush=True)
+        else:
+            print(f"[{n}/{len(prospects)}] {rec['company']} — tier {rec['tier']}, "
+                  f"fit {rec['fit_score']}/100", flush=True)
+
+    print(f"Researching {len(prospects)} companies (this takes a bit)...", flush=True)
+    results = run_batch(client, prospects, ICP, run_id=run_id,
+                        persist=not args.no_db, on_progress=_log)
+    if run_id is not None:
+        db.finish_run(run_id, "done")
 
     args.out.write_text(json.dumps(results, indent=2))
     print_report(results)
