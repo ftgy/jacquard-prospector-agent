@@ -236,7 +236,8 @@ def main():
 
     print("\n" + "=" * 72)
     if json_ok and search_ok:
-        print("  Ready. Run:  python main.py --discover \"<niche>\" --discover-only")
+        print("  Ready. Start the dashboard:  python run_server.py")
+        print("  then open http://127.0.0.1:8000 and launch a run.")
     elif json_ok and not search_ok:
         print("  BLOCKED: no web search on this endpoint.")
         print("  Reasoning and JSON work — but discovery and research both need the")

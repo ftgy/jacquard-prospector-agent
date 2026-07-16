@@ -1,18 +1,15 @@
 """
-Service layer: bridges the agent (agent.py) and persistence (db.py) so the CLI
-(main.py) and the web server (server.py) share one code path.
+Service layer: bridges the agent (agent.py) and persistence (db.py) for the web
+server (server.py).
 
 - run_batch(): qualify a list of prospects, persisting each result and updating
-  run progress as it goes. Same "one bad company doesn't kill the batch" behavior
-  the CLI has always had.
+  run progress as it goes. One bad company doesn't kill the batch.
 - start_run_async(): kick off a discovery-and/or-qualification run on a background
   thread and return immediately with a run id the frontend can poll.
-- friendly_api_error(): shared translation of common API failures (moved here from
-  main.py so both entrypoints use it).
+- friendly_api_error(): translation of common API failures into actionable text.
 """
 
 import threading
-from typing import Callable
 
 import anthropic
 
@@ -39,24 +36,21 @@ def friendly_api_error(e: Exception) -> str:
                 "  https://console.anthropic.com -> Plans & Billing\n"
                 "(Or point ANTHROPIC_BASE_URL at your LiteLLM instance instead.)")
     if isinstance(e, anthropic.RateLimitError):
-        return "Rate limited. Wait a moment and retry, or lower --count."
+        return "Rate limited. Wait a moment and retry, or use a smaller count."
     if isinstance(e, anthropic.NotFoundError) and using_proxy():
         return (f"Endpoint or model not found on the proxy: {msg}\n"
-                "Run `python check_setup.py` to list models it actually serves, "
-                "then set PROSPECT_MODEL in .env.")
+                "Run `python scripts/check_setup.py` to list models it actually "
+                "serves, then set PROSPECT_MODEL in .env.")
     return msg
 
 
 def run_batch(client: anthropic.Anthropic, prospects: list[dict], icp: str = ICP,
-              run_id: int | None = None, persist: bool = True,
-              on_progress: Callable[[dict], None] | None = None) -> list[dict]:
+              run_id: int | None = None) -> list[dict]:
     """Research + qualify each prospect, persisting results as they land.
 
     `prospects` is a list of {'company', 'hint'}. Returns the list of result
     records (qualified verdicts or {'company', 'error'}). If run_id is given, each
-    completed company bumps that run's progress counter. Set persist=False to skip
-    the SQLite store entirely (CLI --no-db). on_progress(record) is invoked after
-    each company for callers that want to stream/log.
+    completed company bumps that run's progress counter.
     """
     results = []
     for p in prospects:
@@ -65,12 +59,9 @@ def run_batch(client: anthropic.Anthropic, prospects: list[dict], icp: str = ICP
             record = run_prospect(client, company, icp, p.get("hint", ""))
         except Exception as e:  # one bad company shouldn't kill the batch
             record = {"company": company, "error": friendly_api_error(e)}
-        if persist:
-            db.insert_prospect(record, run_id=run_id)
-            if run_id is not None:
-                db.bump_run_progress(run_id)
-        if on_progress:
-            on_progress(record)
+        db.insert_prospect(record, run_id=run_id)
+        if run_id is not None:
+            db.bump_run_progress(run_id)
         results.append(record)
     return results
 

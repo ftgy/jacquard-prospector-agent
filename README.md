@@ -63,39 +63,23 @@ works *before* you spend a run finding out.
 
 ## Run
 
-```bash
-# Discover companies in a niche, then research + qualify each:
-python main.py --discover "recruiting agencies in Barcelona" --count 10
-
-# Preview who it finds WITHOUT paying for deep research (cheap, fast):
-python main.py --discover "e-commerce brands in Madrid" --count 15 --discover-only
-
-# Qualify companies you already have:
-python main.py --companies "Acme Inc" "Globex Corp"
-
-# Or from a CSV (a 'company' column, optional 'hint' column):
-python main.py --file prospects.csv
-```
-
-It prints a ranked report to the terminal, writes full details (including
-research summaries and source URLs) to `results.json`, **and stores every
-prospect in a SQLite database** (`prospector.db`) so runs accumulate over time.
-Pass `--no-db` to skip the database for a run.
-
-**Tip:** run `--discover-only` first to sanity-check the niche and eyeball the
-company list, then re-run without it to qualify. Discovery is ~2 API calls total;
-qualification is ~2 calls *per company*, so previewing first saves real money.
-
-## Dashboard
-
-A browser panel for the stored prospects — browse, filter, and launch new
-research runs with live progress.
+Everything runs from the browser dashboard — browse stored prospects, filter
+them, and launch new research runs with live progress.
 
 ```bash
 python run_server.py          # then open http://127.0.0.1:8000
 ```
 
-To backfill the dashboard from an existing `results.json`:
+Prospects are stored in a SQLite database (`prospector.db`) so runs accumulate
+over time. In the run panel you can **discover a niche** (find real companies,
+then research + qualify each) or **qualify named companies** directly.
+
+**Cost tip:** discovery is ~2 API calls total, but qualification is ~2 calls
+*per company* — so a big discover-and-qualify run adds up. Start with a small
+count to sanity-check a niche before scaling it.
+
+If you have an existing `results.json` from a previous version, backfill it into
+the database once:
 
 ```bash
 python scripts/import_results.py
@@ -144,11 +128,9 @@ The code lives in a `prospector/` package; entry points sit at the project root.
 | `prospector/db.py`      | SQLite persistence (`prospector.db`): prospects + runs. |
 | `prospector/service.py` | Bridges the agent and the database; shared by the CLI and the web server. |
 | `prospector/server.py`  | FastAPI backend + dashboard (`prospector/static/index.html`). |
-| `main.py`               | CLI entry: discovers/reads prospects, runs the pipeline, prints + saves. |
 | `run_server.py`         | Web entry: launches the dashboard server. |
 | `scripts/check_setup.py`   | Diagnostic: what your endpoint serves and supports. **Run first.** |
 | `scripts/import_results.py`| Backfill the database from an existing `results.json`. |
-| `prospects.example.csv` | Sample input; copy to `prospects.csv` and fill in your leads. |
 
 ## Troubleshooting
 
@@ -180,8 +162,8 @@ defensive parsing. Force either mode with `STRUCTURED_OUTPUT=native|prompted`.
 
 **TLS / `CERTIFICATE_VERIFY_FAILED`** — some networks (corporate/VPN) intercept
 TLS. `curl` works because it trusts the system CA store; Python doesn't, because
-the SDK verifies against `certifi`'s bundle. `main.py` auto-points at the system
-bundle, but if you call `agent.py` directly from your own script:
+the SDK verifies against `certifi`'s bundle. `config.make_client()` auto-points at
+the system bundle, but if you call the agent directly from your own script:
 
 ```bash
 export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt

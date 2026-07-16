@@ -7,6 +7,6 @@ Package layout:
   db, service           — SQLite persistence and the agent<->db service layer
   server                — FastAPI backend + dashboard (static/index.html)
 
-Entry points live at the project root: main.py (CLI) and run_server.py (web);
+The entry point lives at the project root: run_server.py (the web dashboard);
 one-off scripts live in scripts/.
 """
