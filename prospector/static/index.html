@@ -12,13 +12,13 @@
     --muted:        #8a887f;
     --hairline:     rgba(20,19,12,0.12);
     --hairline-2:   rgba(20,19,12,0.06);
-    --accent:       #1f5fd6;   /* console blue */
+    --accent:       #1f5fd6;
     --accent-ink:   #123a86;
 
     --tier-a:       #0ca30c;
     --tier-b:       #1f5fd6;
     --tier-c:       #d98a12;
-    --tier-d:       #cf3b3b;   /* disqualified */
+    --tier-d:       #cf3b3b;
 
     --shadow:       0 1px 2px rgba(20,19,12,.06), 0 8px 30px rgba(20,19,12,.07);
     --mono:         ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, monospace;
@@ -26,18 +26,12 @@
   }
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) {
-      --plane:      #0e0e0c;
-      --surface:    #1a1a17;
-      --surface-2:  #232320;
-      --ink:        #f3f2ea;
-      --ink-2:      #b6b4a8;
-      --muted:      #86847b;
-      --hairline:   rgba(255,255,255,0.13);
-      --hairline-2: rgba(255,255,255,0.06);
-      --accent:     #5c94f0;
-      --accent-ink: #9dbdf6;
-      --tier-a:     #2fbb2f; --tier-b: #5c94f0; --tier-c: #eaa93a; --tier-d: #e26060;
-      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.5);
+      --plane:#0e0e0c; --surface:#1a1a17; --surface-2:#232320;
+      --ink:#f3f2ea; --ink-2:#b6b4a8; --muted:#86847b;
+      --hairline:rgba(255,255,255,0.13); --hairline-2:rgba(255,255,255,0.06);
+      --accent:#5c94f0; --accent-ink:#9dbdf6;
+      --tier-a:#2fbb2f; --tier-b:#5c94f0; --tier-c:#eaa93a; --tier-d:#e26060;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.5);
     }
   }
   :root[data-theme="dark"] {
@@ -50,138 +44,96 @@
   }
 
   * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--plane); color: var(--ink);
-    font-family: var(--sans); font-size: 14px; line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-  }
+  body { margin: 0; background: var(--plane); color: var(--ink);
+         font-family: var(--sans); font-size: 14px; line-height: 1.5;
+         -webkit-font-smoothing: antialiased; }
   a { color: var(--accent); }
   button { font-family: inherit; }
   ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
-
   .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 80px; }
 
-  /* --- masthead --- */
-  header.mast {
-    border-bottom: 1px solid var(--hairline);
-    background: var(--surface);
-    position: sticky; top: 0; z-index: 20;
-  }
-  .mast-in {
-    max-width: 1180px; margin: 0 auto; padding: 14px 24px;
-    display: flex; align-items: center; gap: 16px;
-  }
+  /* masthead */
+  header.mast { border-bottom: 1px solid var(--hairline); background: var(--surface);
+                position: sticky; top: 0; z-index: 20; }
+  .mast-in { max-width: 1180px; margin: 0 auto; padding: 14px 24px;
+             display: flex; align-items: center; gap: 16px; }
   .brand { display: flex; align-items: baseline; gap: 10px; }
-  .brand .dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--tier-a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tier-a) 22%, transparent);
-    align-self: center;
-  }
-  .brand h1 {
-    font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -.01em;
-  }
-  .brand .sub {
-    font-family: var(--mono); font-size: 11px; color: var(--muted);
-    letter-spacing: .02em;
-  }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--tier-a);
+                box-shadow: 0 0 0 3px color-mix(in srgb, var(--tier-a) 22%, transparent);
+                align-self: center; }
+  .brand h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+  .brand .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .02em; }
   .mast-spacer { flex: 1; }
-  .icon-btn {
-    background: var(--surface-2); border: 1px solid var(--hairline);
-    color: var(--ink-2); border-radius: 8px; padding: 7px 11px; cursor: pointer;
-    font-size: 13px; display: inline-flex; align-items: center; gap: 7px;
-  }
+  .icon-btn { background: var(--surface-2); border: 1px solid var(--hairline); color: var(--ink-2);
+              border-radius: 8px; padding: 7px 11px; cursor: pointer; font-size: 13px;
+              display: inline-flex; align-items: center; gap: 7px; }
   .icon-btn:hover { border-color: var(--accent); color: var(--ink); }
   .icon-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .icon-btn.primary:hover { filter: brightness(1.06); }
+  .icon-btn:disabled { opacity: .55; cursor: default; }
 
-  /* --- stat rail --- */
-  .stats {
-    display: grid; grid-template-columns: 1.2fr repeat(4, 1fr) 1.1fr; gap: 1px;
-    background: var(--hairline); border: 1px solid var(--hairline);
-    border-radius: 12px; overflow: hidden; margin: 24px 0 20px; box-shadow: var(--shadow);
-  }
+  /* tab bar */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--hairline);
+          margin: 22px 0 20px; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent;
+                 color: var(--ink-2); padding: 10px 14px; cursor: pointer; font-size: 14px;
+                 font-weight: 500; margin-bottom: -1px; display: inline-flex; align-items: center; gap: 8px; }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .tabs button .tnum { font-family: var(--mono); font-size: 11px; color: var(--muted);
+                       background: var(--surface-2); border-radius: 999px; padding: 1px 7px; }
+
+  .tabpane { display: none; }
+  .tabpane.on { display: block; }
+
+  /* stat rail */
+  .stats { display: grid; grid-template-columns: 1.2fr repeat(4, 1fr) 1.1fr; gap: 1px;
+           background: var(--hairline); border: 1px solid var(--hairline); border-radius: 12px;
+           overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow); }
   .stat { background: var(--surface); padding: 14px 16px; }
   .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .stat .v { font-size: 26px; font-weight: 650; letter-spacing: -.02em; margin-top: 3px;
              font-variant-numeric: tabular-nums; }
   .stat .v small { font-size: 13px; color: var(--muted); font-weight: 500; }
-  .stat.tierA .v { color: var(--tier-a); }
-  .stat.tierB .v { color: var(--tier-b); }
-  .stat.tierC .v { color: var(--tier-c); }
-  .stat.tierD .v { color: var(--tier-d); }
-  /* the one chart: a tier distribution bar */
+  .stat.tierA .v { color: var(--tier-a); } .stat.tierB .v { color: var(--tier-b); }
+  .stat.tierC .v { color: var(--tier-c); } .stat.tierD .v { color: var(--tier-d); }
   .stat.dist { display: flex; flex-direction: column; justify-content: center; }
   .distbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin-top: 8px;
              background: var(--surface-2); gap: 2px; }
-  .distbar span { display: block; }
-  .distbar .sA { background: var(--tier-a); }
-  .distbar .sB { background: var(--tier-b); }
-  .distbar .sC { background: var(--tier-c); }
-  .distbar .sD { background: var(--tier-d); }
+  .distbar .sA { background: var(--tier-a); } .distbar .sB { background: var(--tier-b); }
+  .distbar .sC { background: var(--tier-c); } .distbar .sD { background: var(--tier-d); }
 
-  /* --- run panel --- */
-  .panel {
-    background: var(--surface); border: 1px solid var(--hairline);
-    border-radius: 12px; padding: 16px 18px; margin-bottom: 20px; box-shadow: var(--shadow);
-  }
+  /* panel + forms */
+  .panel { background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px;
+           padding: 16px 18px; margin-bottom: 20px; box-shadow: var(--shadow); }
   .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
               color: var(--muted); margin: 0 0 12px; }
   .run-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--hairline);
-         border-radius: 8px; padding: 2px; }
-  .seg button {
-    border: 0; background: transparent; color: var(--ink-2); padding: 6px 12px;
-    border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;
-  }
-  .seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
-  input[type=text], input[type=number] {
-    font-family: inherit; font-size: 14px; color: var(--ink);
-    background: var(--surface-2); border: 1px solid var(--hairline);
-    border-radius: 8px; padding: 8px 11px;
-  }
-  input[type=text]:focus, input[type=number]:focus {
-    outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px;
-    border-color: var(--accent);
-  }
-  #runQuery { flex: 1; min-width: 220px; }
-  #runCount { width: 72px; }
+  input[type=text], input[type=number] { font-family: inherit; font-size: 14px; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px; padding: 8px 11px; }
+  input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+                outline-offset: 1px; border-color: var(--accent); }
+  .run-row input[type=text] { flex: 1; min-width: 220px; }
+  .run-row input[type=number] { width: 72px; }
   .run-hint { font-size: 12px; color: var(--muted); margin-top: 9px; font-family: var(--mono); }
 
-  /* niche finder */
-  .niche-finder { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--hairline); }
-  .nf-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .nf-label { font-size: 12px; color: var(--muted); font-family: var(--mono); }
-  #cityInput { flex: 1; min-width: 200px; }
-  .niche-results { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .niche-results:empty { margin-top: 0; }
-  .niche-chip {
-    border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--hairline));
-    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-    color: var(--ink); border-radius: 999px; padding: 7px 13px; cursor: pointer;
-    font-size: 13px; display: inline-flex; align-items: center; gap: 8px;
-    max-width: 100%; text-align: left; transition: border-color .15s, background .15s;
-  }
+  /* niche chips */
+  .niche-results { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .niche-chip { border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--hairline));
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--ink);
+    border-radius: 999px; padding: 7px 13px; cursor: pointer; font-size: 13px;
+    display: inline-flex; align-items: center; gap: 8px; max-width: 100%; text-align: left;
+    transition: border-color .15s, background .15s; }
   .niche-chip:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, var(--surface)); }
   .niche-chip .plus { color: var(--accent); font-weight: 700; }
   .niche-chip .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nf-note { font-size: 12px; color: var(--muted); font-family: var(--mono); width: 100%; }
 
-  .run-live { margin-top: 14px; display: none; }
-  .run-live.show { display: block; }
-  .progress { height: 8px; background: var(--surface-2); border-radius: 5px; overflow: hidden;
-              border: 1px solid var(--hairline); }
-  .progress i { display: block; height: 100%; background: var(--accent);
-                width: 0%; transition: width .4s ease; }
-  .run-live .meta { display: flex; justify-content: space-between; font-family: var(--mono);
-                    font-size: 12px; color: var(--ink-2); margin-top: 7px; }
-
-  /* --- filters --- */
-  .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-  .chip {
-    border: 1px solid var(--hairline); background: var(--surface); color: var(--ink-2);
-    border-radius: 999px; padding: 5px 13px; cursor: pointer; font-size: 13px;
-    display: inline-flex; align-items: center; gap: 7px;
-  }
+  /* filters */
+  .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .chip { border: 1px solid var(--hairline); background: var(--surface); color: var(--ink-2);
+          border-radius: 999px; padding: 5px 13px; cursor: pointer; font-size: 13px;
+          display: inline-flex; align-items: center; gap: 7px; }
   .chip:hover { border-color: var(--accent); }
   .chip.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
   .chip .swatch { width: 8px; height: 8px; border-radius: 50%; }
@@ -190,58 +142,63 @@
   .filters input[type=range] { accent-color: var(--accent); }
   #search { min-width: 180px; }
 
-  /* --- table --- */
-  .tablewrap { background: var(--surface); border: 1px solid var(--hairline);
-               border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+  /* result groups */
+  .group { background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px;
+           overflow: hidden; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .group-head { display: flex; align-items: center; gap: 12px; padding: 13px 16px;
+                border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
+  .group.collapsed .group-head { border-bottom: 0; }
+  .group.collapsed .group-body { display: none; }
+  .group-toggle { background: none; border: 0; color: var(--muted); cursor: pointer;
+                  font-size: 13px; padding: 0 2px; transition: transform .15s; }
+  .group.collapsed .group-toggle { transform: rotate(-90deg); }
+  .kind-badge { font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+                letter-spacing: .05em; padding: 3px 8px; border-radius: 6px;
+                background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+                color: var(--accent-ink); border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); }
+  .kind-badge.imported { background: var(--surface-2); color: var(--muted); border-color: var(--hairline); }
+  .group-query { font-weight: 650; letter-spacing: -.01em; font-size: 15px; }
+  .group-meta { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; }
+  .group-prog { flex-basis: 100%; height: 6px; background: var(--surface-2); border-radius: 4px;
+                overflow: hidden; border: 1px solid var(--hairline-2); }
+  .group-prog i { display: block; height: 100%; background: var(--accent); transition: width .4s ease; }
+  .group-note { padding: 18px 16px; color: var(--muted); font-size: 13px; }
+  .group-note.err { color: var(--tier-d); font-family: var(--mono); font-size: 12.5px; }
+
   .scroll { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; min-width: 720px; }
-  thead th {
-    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-    color: var(--muted); font-weight: 600; padding: 11px 16px;
-    border-bottom: 1px solid var(--hairline); background: var(--surface); position: sticky; top: 0;
-    cursor: pointer; user-select: none; white-space: nowrap;
-  }
-  thead th.sortable:hover { color: var(--ink); }
-  thead th .caret { opacity: .55; font-size: 10px; }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
   tbody tr { border-bottom: 1px solid var(--hairline-2); cursor: pointer; }
   tbody tr:last-child { border-bottom: 0; }
   tbody tr:hover { background: var(--surface-2); }
-  td { padding: 12px 16px; vertical-align: middle; }
+  td { padding: 11px 16px; vertical-align: middle; }
   td.co { font-weight: 600; letter-spacing: -.01em; }
   td.co .line { display: block; font-weight: 400; color: var(--ink-2); font-size: 12.5px;
-                margin-top: 2px; max-width: 460px;
-                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tier {
-    font-family: var(--mono); font-size: 12px; font-weight: 700; width: 22px; height: 22px;
-    display: inline-flex; align-items: center; justify-content: center; border-radius: 6px;
-    color: #fff;
-  }
+                margin-top: 2px; max-width: 430px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tier { font-family: var(--mono); font-size: 12px; font-weight: 700; width: 22px; height: 22px;
+          display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: #fff; }
   .tier.A { background: var(--tier-a); } .tier.B { background: var(--tier-b); }
   .tier.C { background: var(--tier-c); } .tier.disqualified,.tier.X { background: var(--tier-d); }
   .tier.err { background: var(--muted); }
-  /* fit-signal meter — signature element */
   .fit { display: flex; align-items: center; gap: 10px; min-width: 150px; }
-  .fit .num { font-family: var(--mono); font-variant-numeric: tabular-nums;
-              font-size: 13px; font-weight: 600; width: 26px; text-align: right; }
+  .fit .num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13px;
+              font-weight: 600; width: 26px; text-align: right; }
   .meter { flex: 1; height: 8px; background: var(--surface-2); border-radius: 5px; overflow: hidden;
            position: relative; border: 1px solid var(--hairline-2); }
   .meter i { display: block; height: 100%; border-radius: 5px; }
   .conf { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; }
-  .conf b { color: var(--ink-2); font-weight: 600; }
 
-  .empty { padding: 60px 24px; text-align: center; color: var(--muted); }
+  .empty { padding: 50px 24px; text-align: center; color: var(--muted); }
   .empty b { color: var(--ink); font-weight: 600; }
+  .pane-hint { font-size: 12px; color: var(--muted); font-family: var(--mono); margin: -6px 0 0; }
 
-  /* --- drawer --- */
+  /* drawer */
   .scrim { position: fixed; inset: 0; background: rgba(10,10,8,.4); backdrop-filter: blur(2px);
            opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 40; }
   .scrim.show { opacity: 1; pointer-events: auto; }
-  .drawer {
-    position: fixed; top: 0; right: 0; height: 100%; width: min(560px, 94vw);
-    background: var(--surface); border-left: 1px solid var(--hairline); z-index: 50;
-    transform: translateX(100%); transition: transform .26s cubic-bezier(.4,0,.2,1);
-    display: flex; flex-direction: column; box-shadow: -20px 0 60px rgba(0,0,0,.16);
-  }
+  .drawer { position: fixed; top: 0; right: 0; height: 100%; width: min(560px, 94vw);
+            background: var(--surface); border-left: 1px solid var(--hairline); z-index: 50;
+            transform: translateX(100%); transition: transform .26s cubic-bezier(.4,0,.2,1);
+            display: flex; flex-direction: column; box-shadow: -20px 0 60px rgba(0,0,0,.16); }
   .drawer.show { transform: translateX(0); }
   .drawer .dhead { padding: 20px 22px 16px; border-bottom: 1px solid var(--hairline); }
   .drawer .dhead .row { display: flex; align-items: flex-start; gap: 12px; }
@@ -251,6 +208,8 @@
                    font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px; }
   .drawer .close:hover { color: var(--ink); }
   .verdict { color: var(--ink-2); margin: 6px 0 0; }
+  .drawer .fit { margin-top: 14px; }
+  .conf b { color: var(--ink-2); font-weight: 600; }
   .sec { margin-top: 22px; }
   .sec h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
             margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
@@ -265,8 +224,8 @@
   ul.plain li { padding: 7px 0 7px 20px; position: relative; border-bottom: 1px solid var(--hairline-2);
                 font-size: 13px; color: var(--ink-2); }
   ul.plain li:last-child { border-bottom: 0; }
-  ul.plain li::before { content: ""; position: absolute; left: 4px; top: 14px;
-                        width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  ul.plain li::before { content: ""; position: absolute; left: 4px; top: 14px; width: 5px; height: 5px;
+                        border-radius: 50%; background: var(--accent); }
   ul.plain.flags li::before { background: var(--tier-d); }
   .angle { background: color-mix(in srgb, var(--accent) 9%, var(--surface));
            border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--hairline));
@@ -275,9 +234,8 @@
   .sources a { display: block; font-family: var(--mono); font-size: 12px; padding: 5px 0;
                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .errbox { background: color-mix(in srgb, var(--tier-d) 10%, var(--surface));
-            border: 1px solid color-mix(in srgb, var(--tier-d) 35%, transparent);
-            border-radius: 10px; padding: 12px 14px; color: var(--ink); font-family: var(--mono);
-            font-size: 12.5px; white-space: pre-wrap; }
+            border: 1px solid color-mix(in srgb, var(--tier-d) 35%, transparent); border-radius: 10px;
+            padding: 12px 14px; color: var(--ink); font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; }
 
   .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
            background: var(--ink); color: var(--surface); padding: 10px 18px; border-radius: 10px;
@@ -287,15 +245,15 @@
   @media (max-width: 780px) {
     .stats { grid-template-columns: 1fr 1fr; }
     .stat.dist { grid-column: 1 / -1; }
+    .group-meta { margin-left: 0; }
   }
 </style>
 
 <header class="mast">
   <div class="mast-in">
     <div class="brand">
-      <span class="dot"></span>
-      <h1>Prospector</h1>
-      <span class="sub" id="target">qualification console</span>
+      <span class="dot"></span><h1>Prospector</h1>
+      <span class="sub">qualification console</span>
     </div>
     <div class="mast-spacer"></div>
     <button class="icon-btn" id="themeBtn" title="Toggle theme">◐ Theme</button>
@@ -304,8 +262,14 @@
 </header>
 
 <div class="wrap">
-  <!-- stat rail -->
-  <section class="stats" id="stats" aria-label="Summary">
+  <nav class="tabs" id="tabs">
+    <button data-tab="niches">Niches</button>
+    <button data-tab="niche">Research a niche <span class="tnum" id="cnt-niche">0</span></button>
+    <button data-tab="companies">Research companies <span class="tnum" id="cnt-companies">0</span></button>
+  </nav>
+
+  <!-- stat rail (research tabs only) -->
+  <section class="stats" id="stats" aria-label="Pipeline summary">
     <div class="stat"><div class="k">Prospects</div><div class="v" id="s-total">—</div></div>
     <div class="stat tierA"><div class="k">Tier A</div><div class="v" id="s-a">—</div></div>
     <div class="stat tierB"><div class="k">Tier B</div><div class="v" id="s-b">—</div></div>
@@ -318,38 +282,9 @@
     </div>
   </section>
 
-  <!-- run panel -->
-  <section class="panel">
-    <h2>Launch research run</h2>
-    <div class="run-row">
-      <div class="seg" id="mode">
-        <button data-mode="discover" class="on">Discover a niche</button>
-        <button data-mode="companies">Specific companies</button>
-      </div>
-      <input type="text" id="runQuery" placeholder="e.g. recruiting agencies in Barcelona">
-      <input type="number" id="runCount" value="8" min="1" max="50" title="How many to discover">
-      <button class="icon-btn primary" id="runBtn">▶ Run</button>
-    </div>
-    <div class="run-hint" id="runHint">Finds real companies in a niche, then researches & qualifies each against your ICP.</div>
-
-    <div class="niche-finder">
-      <div class="nf-row">
-        <span class="nf-label">Not sure where to start?</span>
-        <input type="text" id="cityInput" placeholder="Suggest niches in a city — e.g. Valencia">
-        <button class="icon-btn" id="nicheBtn">✦ Suggest niches</button>
-      </div>
-      <div class="niche-results" id="nicheResults"></div>
-    </div>
-
-    <div class="run-live" id="runLive">
-      <div class="progress"><i id="progFill"></i></div>
-      <div class="meta"><span id="progText">Starting…</span><span id="progPct"></span></div>
-    </div>
-  </section>
-
-  <!-- filters -->
-  <div class="filters">
-    <span class="chip on" data-tier="" >All</span>
+  <!-- filters (research tabs only) -->
+  <div class="filters" id="filters">
+    <span class="chip on" data-tier="">All</span>
     <span class="chip" data-tier="A"><span class="swatch" style="background:var(--tier-a)"></span>A</span>
     <span class="chip" data-tier="B"><span class="swatch" style="background:var(--tier-b)"></span>B</span>
     <span class="chip" data-tier="C"><span class="swatch" style="background:var(--tier-c)"></span>C</span>
@@ -359,25 +294,47 @@
     <input type="text" id="search" placeholder="Search company…">
   </div>
 
-  <!-- table -->
-  <div class="tablewrap">
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr>
-            <th class="sortable" data-sort="company">Company <span class="caret"></span></th>
-            <th>Tier</th>
-            <th class="sortable" data-sort="fit">Fit signal <span class="caret">▾</span></th>
-            <th>Confidence</th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
+  <!-- Tab 1: Niches -->
+  <section class="tabpane" id="pane-niches">
+    <div class="panel">
+      <h2>Suggest niches for a city</h2>
+      <div class="run-row">
+        <input type="text" id="cityInput" placeholder="Enter a city or region — e.g. Valencia, Spain">
+        <input type="number" id="cityCount" value="8" min="1" max="20" title="How many niches">
+        <button class="icon-btn primary" id="nicheBtn">✦ Suggest niches</button>
+      </div>
+      <div class="run-hint">A fast idea pass grounded in the city's economy and your ICP — no web search, no cost to the pipeline.</div>
+      <div class="niche-results" id="nicheResults"></div>
     </div>
-    <div class="empty" id="empty" style="display:none">
-      <b>No prospects yet.</b><br>Launch a research run above to start building your pipeline.
+    <p class="pane-hint">Pick a niche to load it into “Research a niche”, then run discovery.</p>
+  </section>
+
+  <!-- Tab 2: Research a niche -->
+  <section class="tabpane" id="pane-niche">
+    <div class="panel">
+      <h2>Research a niche</h2>
+      <div class="run-row">
+        <input type="text" id="nicheQuery" placeholder="e.g. independent recruiting agencies in Barcelona">
+        <input type="number" id="nicheCount" value="8" min="1" max="50" title="How many companies to discover">
+        <button class="icon-btn primary" id="nicheRunBtn">▶ Discover &amp; qualify</button>
+      </div>
+      <div class="run-hint">Finds real companies in the niche, then researches &amp; qualifies each against your ICP.</div>
     </div>
-  </div>
+    <div class="groups" id="niche-groups"></div>
+  </section>
+
+  <!-- Tab 3: Research companies -->
+  <section class="tabpane" id="pane-companies">
+    <div class="panel">
+      <h2>Research specific companies</h2>
+      <div class="run-row">
+        <input type="text" id="companyQuery" placeholder="Company names, comma-separated — e.g. Acme Inc, Globex, Initech">
+        <button class="icon-btn primary" id="companyRunBtn">▶ Research &amp; qualify</button>
+      </div>
+      <div class="run-hint">Researches &amp; qualifies exactly the companies you name.</div>
+    </div>
+    <div class="groups" id="companies-groups"></div>
+  </section>
 </div>
 
 <!-- drawer -->
@@ -386,13 +343,10 @@
   <div class="dhead">
     <div class="row">
       <span class="tier" id="d-tier">—</span>
-      <div>
-        <h3 id="d-company">—</h3>
-        <div class="verdict" id="d-oneline"></div>
-      </div>
+      <div><h3 id="d-company">—</h3><div class="verdict" id="d-oneline"></div></div>
       <button class="close" id="d-close" aria-label="Close">×</button>
     </div>
-    <div class="fit" style="margin-top:14px">
+    <div class="fit">
       <span class="num" id="d-score">—</span>
       <div class="meter"><i id="d-meter"></i></div>
       <span class="conf">conf <b id="d-conf">—</b></span>
@@ -409,11 +363,15 @@ const el = (t, c, h) => { const e = document.createElement(t); if (c) e.classNam
 const esc = s => (s ?? "").toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const tierClass = t => t === 'disqualified' ? 'disqualified' : (t || 'err');
 const tierLabel = t => t === 'disqualified' ? 'DQ' : (t || '!');
-function fitColor(t){ return t==='A'?'var(--tier-a)':t==='B'?'var(--tier-b)':t==='C'?'var(--tier-c)':'var(--tier-d)'; }
+const fitColor = t => t==='A'?'var(--tier-a)':t==='B'?'var(--tier-b)':t==='C'?'var(--tier-c)':'var(--tier-d)';
+const plural = (n, one, many) => `${n} ${n===1?one:many}`;
 
-const state = { tier: "", minScore: 0, q: "", sort: "fit", mode: "discover" };
+const KIND = { niche: "discover", companies: "companies" };
+const state = { tab: "niche", tier: "", minScore: 0, q: "" };
+const cache = { niche: null, companies: null };   // last grouped payload per tab
 
-function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2600); }
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),2600); }
 
 // --- theme ---
 $("#themeBtn").onclick = () => {
@@ -422,53 +380,144 @@ $("#themeBtn").onclick = () => {
   document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
 };
 
+// --- tabs ---
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+function switchTab(tab){
+  state.tab = tab;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  document.querySelectorAll(".tabpane").forEach(p => p.classList.remove("on"));
+  $("#pane-" + tab).classList.add("on");
+  const research = tab !== "niches";
+  $("#stats").style.display = research ? "" : "none";
+  $("#filters").style.display = research ? "" : "none";
+  location.hash = tab;
+  if (research){ loadStats(); loadGroups(tab); }
+}
+
 // --- stats ---
 async function loadStats(){
   const s = await fetch("/api/stats").then(r=>r.json());
   $("#s-total").textContent = s.total;
-  $("#s-a").textContent = s.by_tier.A;
-  $("#s-b").textContent = s.by_tier.B;
-  $("#s-c").textContent = s.by_tier.C;
-  $("#s-d").textContent = s.by_tier.disqualified;
+  $("#s-a").textContent = s.by_tier.A; $("#s-b").textContent = s.by_tier.B;
+  $("#s-c").textContent = s.by_tier.C; $("#s-d").textContent = s.by_tier.disqualified;
   $("#s-avg").innerHTML = (s.avg_fit ?? "—") + "<small>/100</small>";
   const bar = $("#distbar"); bar.innerHTML = "";
   const cls = {A:"sA",B:"sB",C:"sC",disqualified:"sD"};
-  const tot = ["A","B","C","disqualified"].reduce((a,t)=>a+s.by_tier[t],0) || 1;
-  for (const t of ["A","B","C","disqualified"]) {
+  for (const t of ["A","B","C","disqualified"]){
     const n = s.by_tier[t]; if (!n) continue;
-    const seg = el("span", cls[t]); seg.style.flex = n; seg.title = `Tier ${t}: ${n}`;
-    bar.appendChild(seg);
+    const seg = el("span", cls[t]); seg.style.flex = n; seg.title = `Tier ${t}: ${n}`; bar.appendChild(seg);
   }
 }
 
-// --- table ---
-async function loadRows(){
-  const p = new URLSearchParams();
-  if (state.tier) p.set("tier", state.tier);
-  if (state.minScore) p.set("min_score", state.minScore);
-  if (state.q) p.set("q", state.q);
-  p.set("sort", state.sort);
-  const rows = await fetch("/api/prospects?"+p).then(r=>r.json());
-  const tb = $("#rows"); tb.innerHTML = "";
-  $("#empty").style.display = rows.length ? "none" : "block";
-  for (const r of rows){
-    const tr = el("tr");
-    const isErr = r.error != null;
-    const score = r.fit_score ?? 0;
-    tr.innerHTML = `
-      <td class="co">${esc(r.company)}<span class="line">${isErr ? "⚠ "+esc(r.error) : esc(r.one_line)}</span></td>
-      <td><span class="tier ${isErr?'err':tierClass(r.tier)}">${isErr?'!':tierLabel(r.tier)}</span></td>
-      <td>${isErr ? '<span class="conf">—</span>' : `<div class="fit"><span class="num">${score}</span>
-           <div class="meter"><i style="width:${score}%;background:${fitColor(r.tier)}"></i></div></div>`}</td>
-      <td><span class="conf">${isErr?'—':esc(r.confidence||'—')}</span></td>`;
-    tr.onclick = () => openDrawer(r.id);
-    tb.appendChild(tr);
-  }
+// --- grouped results ---
+async function loadGroups(tab){
+  const data = await fetch("/api/results/" + KIND[tab]).then(r=>r.json());
+  cache[tab] = data;
+  renderGroups(tab);
+  updateTabCounts();
 }
 
-// --- drawer ---
+function updateTabCounts(){
+  const count = tab => {
+    const d = cache[tab]; if (!d) return null;
+    let n = d.groups.reduce((a,g)=>a+g.prospects.length, 0);
+    if (tab === "niche") n += d.ungrouped.length;
+    return n;
+  };
+  const cn = count("niche"), cc = count("companies");
+  if (cn != null) $("#cnt-niche").textContent = cn;
+  if (cc != null) $("#cnt-companies").textContent = cc;
+}
+
+function filterProspects(list){
+  return list.filter(r => {
+    if (state.tier && r.tier !== state.tier) return false;
+    if (state.minScore && (r.fit_score ?? 0) < state.minScore) return false;
+    if (state.q && !(r.company || "").toLowerCase().includes(state.q.toLowerCase())) return false;
+    return true;
+  });
+}
+
+function renderGroups(tab){
+  const container = $("#" + tab + "-groups");
+  const data = cache[tab]; container.innerHTML = "";
+  const groups = data ? data.groups : [];
+  const ungrouped = (tab === "niche" && data) ? data.ungrouped : [];
+
+  if (!groups.length && !ungrouped.length){
+    container.appendChild(el("div", "empty", tab === "niche"
+      ? "<b>No niche research yet.</b><br>Run a niche above, or get ideas in the <b>Niches</b> tab."
+      : "<b>No company research yet.</b><br>Add company names above to research them."));
+    return;
+  }
+  for (const g of groups) container.appendChild(groupCard(tab, g.run, g.prospects));
+  for (const _ of [0]) if (ungrouped.length) container.appendChild(groupCard(tab, null, ungrouped, true));
+}
+
+function groupCard(tab, run, prospects, isUngrouped){
+  const card = el("div", "group");
+  const running = run && run.status === "running";
+  const failed = run && run.status === "error";
+  const total = run ? (run.total || 0) : 0, done = run ? (run.completed || 0) : 0;
+  const filtered = filterProspects(prospects);
+
+  const kindLabel = isUngrouped ? "imported" : (tab === "niche" ? "niche" : "companies");
+  const query = isUngrouped ? "Imported — no query" : run.query;
+  const date = run ? (run.created_at || "").slice(0, 10) : "";
+  let meta;
+  if (isUngrouped) meta = plural(prospects.length, "prospect", "prospects");
+  else if (running) meta = total ? `researching ${done}/${total}` : "discovering companies…";
+  else if (failed) meta = "failed";
+  else meta = plural(prospects.length, "result", "results");
+
+  const head = el("div", "group-head", `
+    <button class="group-toggle" aria-label="Collapse">▾</button>
+    <span class="kind-badge ${kindLabel}">${kindLabel}</span>
+    <span class="group-query">${esc(query)}</span>
+    <span class="group-meta">${esc(meta)}${date ? ` · ${date}` : ""}</span>`);
+  if (running){
+    const pct = total ? Math.round(done / total * 100) : 12;
+    head.appendChild(el("div", "group-prog", `<i style="width:${pct}%"></i>`));
+  }
+  card.appendChild(head);
+
+  const body = el("div", "group-body");
+  if (failed){
+    body.appendChild(el("div", "group-note err", "Run failed: " + esc(run.error || "unknown error")));
+  } else if (!prospects.length && running){
+    body.appendChild(el("div", "group-note", "Researching… results appear here as each company finishes."));
+  } else if (!filtered.length){
+    body.appendChild(el("div", "group-note", prospects.length
+      ? "No prospects in this group match the current filters."
+      : "No results."));
+  } else {
+    const scroll = el("div", "scroll"), table = el("table"), tb = el("tbody");
+    for (const r of filtered) tb.appendChild(prospectRow(r));
+    table.appendChild(tb); scroll.appendChild(table); body.appendChild(scroll);
+  }
+  card.appendChild(body);
+
+  head.querySelector(".group-toggle").onclick = e => { e.stopPropagation(); card.classList.toggle("collapsed"); };
+  return card;
+}
+
+function prospectRow(r){
+  const tr = el("tr");
+  const isErr = r.error != null;
+  const score = r.fit_score ?? 0;
+  tr.innerHTML = `
+    <td class="co">${esc(r.company)}<span class="line">${isErr ? "⚠ " + esc(r.error) : esc(r.one_line)}</span></td>
+    <td><span class="tier ${isErr ? 'err' : tierClass(r.tier)}">${isErr ? '!' : tierLabel(r.tier)}</span></td>
+    <td>${isErr ? '<span class="conf">—</span>' : `<div class="fit"><span class="num">${score}</span>
+         <div class="meter"><i style="width:${score}%;background:${fitColor(r.tier)}"></i></div></div>`}</td>
+    <td><span class="conf">${isErr ? '—' : esc(r.confidence || '—')}</span></td>`;
+  tr.onclick = () => openDrawer(r.id);
+  return tr;
+}
+
+// --- detail drawer ---
 async function openDrawer(id){
-  const r = await fetch("/api/prospects/"+id).then(x=>x.json());
+  const r = await fetch("/api/prospects/" + id).then(x=>x.json());
   const isErr = r.error != null;
   $("#d-company").textContent = r.company;
   $("#d-oneline").textContent = isErr ? "" : (r.one_line || "");
@@ -477,7 +526,7 @@ async function openDrawer(id){
   tierEl.textContent = isErr ? "!" : tierLabel(r.tier);
   $("#d-score").textContent = isErr ? "—" : (r.fit_score ?? "—");
   $("#d-conf").textContent = isErr ? "—" : (r.confidence || "—");
-  const m = $("#d-meter"); m.style.width = (isErr?0:(r.fit_score||0))+"%"; m.style.background = fitColor(r.tier);
+  const m = $("#d-meter"); m.style.width = (isErr ? 0 : (r.fit_score || 0)) + "%"; m.style.background = fitColor(r.tier);
 
   const body = $("#d-body"); body.innerHTML = "";
   if (isErr){
@@ -500,44 +549,25 @@ async function openDrawer(id){
       body.appendChild(sec(`Sources (${r.sources.length})`,
         `<div class="sources">${r.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`).join("")}</div>`));
   }
-  $("#scrim").classList.add("show");
-  $("#drawer").classList.add("show");
+  $("#scrim").classList.add("show"); $("#drawer").classList.add("show");
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
 function closeDrawer(){ $("#scrim").classList.remove("show"); $("#drawer").classList.remove("show"); }
 $("#d-close").onclick = closeDrawer; $("#scrim").onclick = closeDrawer;
 addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
 
-// --- filters wiring ---
+// --- filters ---
 document.querySelectorAll(".chip[data-tier]").forEach(c => c.onclick = () => {
   document.querySelectorAll(".chip[data-tier]").forEach(x=>x.classList.remove("on"));
-  c.classList.add("on"); state.tier = c.dataset.tier; loadRows();
+  c.classList.add("on"); state.tier = c.dataset.tier; renderGroups(state.tab);
 });
 $("#minScore").oninput = e => { state.minScore = +e.target.value; $("#minScoreV").textContent = e.target.value; };
-$("#minScore").onchange = () => loadRows();
+$("#minScore").onchange = () => renderGroups(state.tab);
 let searchT; $("#search").oninput = e => { clearTimeout(searchT); state.q = e.target.value.trim();
-  searchT = setTimeout(loadRows, 250); };
-document.querySelectorAll("th.sortable").forEach(th => th.onclick = () => {
-  state.sort = th.dataset.sort; loadRows();
-  document.querySelectorAll("th .caret").forEach(c=>c.textContent="");
-  th.querySelector(".caret").textContent = "▾";
-});
-$("#refreshBtn").onclick = () => { loadStats(); loadRows(); };
+  searchT = setTimeout(() => renderGroups(state.tab), 200); };
+$("#refreshBtn").onclick = () => { if (state.tab !== "niches"){ loadStats(); loadGroups(state.tab); } };
 
-// --- run panel wiring ---
-document.querySelectorAll("#mode button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("#mode button").forEach(x=>x.classList.remove("on"));
-  b.classList.add("on"); state.mode = b.dataset.mode;
-  const disc = state.mode === "discover";
-  $("#runQuery").placeholder = disc ? "e.g. recruiting agencies in Barcelona"
-                                    : "Acme Inc, Globex, Initech";
-  $("#runCount").style.display = disc ? "" : "none";
-  $("#runHint").textContent = disc
-    ? "Finds real companies in a niche, then researches & qualifies each against your ICP."
-    : "Researches & qualifies the exact companies you name (comma-separated).";
-});
-
-// --- niche finder ---
+// --- niche suggestion (tab 1) ---
 $("#nicheBtn").onclick = async () => {
   const location = $("#cityInput").value.trim();
   if (!location){ toast("Enter a city first."); return; }
@@ -545,10 +575,9 @@ $("#nicheBtn").onclick = async () => {
   btn.disabled = true; btn.textContent = "✦ Thinking…"; box.innerHTML = "";
   try {
     const res = await fetch("/api/niches", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ location })});
+      body: JSON.stringify({ location, count: +$("#cityCount").value || 8 })});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
-    const { niches } = await res.json();
-    renderNiches(niches, location);
+    renderNiches((await res.json()).niches, location);
   } catch (e){ toast("Couldn't suggest niches: " + e.message); }
   finally { btn.disabled = false; btn.textContent = "✦ Suggest niches"; }
 };
@@ -560,56 +589,64 @@ function renderNiches(niches, location){
     box.innerHTML = `<span class="nf-note">No niches came back for “${esc(location)}”. Try a bigger city or region.</span>`;
     return;
   }
-  box.appendChild(el("span","nf-note",`${niches.length} niches for ${esc(location)} — click one to load it into discovery:`));
+  box.appendChild(el("span","nf-note",`${niches.length} niches for ${esc(location)} — click one to research it:`));
   for (const n of niches){
     const chip = el("button","niche-chip",`<span class="plus">+</span><span class="txt">${esc(n.niche)}</span>`);
     chip.title = [n.why, n.local_angle].filter(Boolean).join("\n\n");
     chip.onclick = () => {
-      document.querySelector('#mode button[data-mode="discover"]').click();
-      const q = $("#runQuery"); q.value = n.niche; q.focus();
-      q.scrollIntoView({ behavior: "smooth", block: "center" });
-      toast("Niche loaded — set a count and hit Run.");
+      switchTab("niche");
+      const q = $("#nicheQuery"); q.value = n.niche; q.focus();
+      toast("Niche loaded — set a count and run discovery.");
     };
     box.appendChild(chip);
   }
 }
 
-let polling = null;
-$("#runBtn").onclick = async () => {
-  const query = $("#runQuery").value.trim();
-  if (!query){ toast("Enter a niche or company names first."); return; }
-  const body = { kind: state.mode, query, count: +$("#runCount").value || 8 };
-  $("#runBtn").disabled = true;
+// --- launching runs ---
+$("#nicheRunBtn").onclick = () => startRun("niche", {
+  kind: "discover", query: $("#nicheQuery").value.trim(), count: +$("#nicheCount").value || 8,
+  btn: $("#nicheRunBtn"), empty: "Enter a niche to research first.",
+});
+$("#nicheQuery").addEventListener("keydown", e => { if (e.key === "Enter") $("#nicheRunBtn").click(); });
+
+$("#companyRunBtn").onclick = () => {
+  const names = $("#companyQuery").value.split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
+  startRun("companies", {
+    kind: "companies", query: $("#companyQuery").value.trim(),
+    count: Math.min(Math.max(names.length, 1), 50),
+    btn: $("#companyRunBtn"), empty: "Enter at least one company name.",
+  });
+};
+$("#companyQuery").addEventListener("keydown", e => { if (e.key === "Enter") $("#companyRunBtn").click(); });
+
+const polls = {};   // one poll per tab
+async function startRun(tab, o){
+  if (!o.query){ toast(o.empty); return; }
+  o.btn.disabled = true;
   try {
-    const res = await fetch("/api/runs", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    const res = await fetch("/api/runs", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ kind: o.kind, query: o.query, count: o.count })});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
     const { run_id } = await res.json();
-    $("#runLive").classList.add("show");
-    pollRun(run_id);
-  } catch (e){ toast("Couldn't start run: " + e.message); $("#runBtn").disabled = false; }
-};
+    await loadGroups(tab);                 // the new run shows immediately as a group
+    pollRun(tab, run_id, o.btn);
+  } catch (e){ toast("Couldn't start run: " + e.message); o.btn.disabled = false; }
+}
 
-function pollRun(id){
-  clearInterval(polling);
-  polling = setInterval(async () => {
-    const run = await fetch("/api/runs/"+id).then(r=>r.json());
-    const total = run.total || 0, done = run.completed || 0;
-    const pct = total ? Math.round(done/total*100) : (run.status==="running"? 8 : 0);
-    $("#progFill").style.width = pct + "%";
-    $("#progPct").textContent = total ? `${done}/${total}` : "";
-    if (run.status === "running")
-      $("#progText").textContent = total ? "Researching & qualifying…" : "Discovering companies…";
-    if (done !== pollRun._last){ pollRun._last = done; loadStats(); loadRows(); }
-    if (run.status !== "running"){
-      clearInterval(polling);
-      $("#runBtn").disabled = false;
-      if (run.status === "error"){ $("#progText").textContent = "Run failed"; toast(run.error || "Run failed"); }
-      else { $("#progText").textContent = "Done"; $("#progFill").style.width = "100%"; toast("Run complete."); }
-      loadStats(); loadRows();
-      setTimeout(()=>$("#runLive").classList.remove("show"), 4000);
-    }
+function pollRun(tab, runId, btn){
+  clearInterval(polls[tab]);
+  polls[tab] = setInterval(async () => {
+    await loadGroups(tab);
+    if (state.tab === tab) loadStats();
+    const g = (cache[tab].groups || []).find(g => g.run && g.run.id === runId);
+    if (!g || g.run.status === "running") return;
+    clearInterval(polls[tab]); btn.disabled = false;
+    toast(g.run.status === "error" ? (g.run.error || "Run failed") : "Run complete.");
+    loadStats();
   }, 2500);
 }
 
-loadStats(); loadRows();
+// --- boot ---
+const start = ["niches","niche","companies"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "niche";
+switchTab(start);
 </script>

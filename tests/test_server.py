@@ -112,6 +112,21 @@ def test_niches_api_error_returns_502(client, monkeypatch):
     assert "exploded" in r.json()["detail"]
 
 
+def test_results_grouped_by_kind(client):
+    run_id = db.create_run("discover", "agencies in Girona", 1)
+    db.insert_prospect(make_record("Girona Talent"), run_id=run_id)
+    db.insert_prospect(make_record("Legacy Co"))  # ungrouped
+
+    data = client.get("/api/results/discover").json()
+    assert data["groups"][0]["run"]["query"] == "agencies in Girona"
+    assert data["groups"][0]["prospects"][0]["company"] == "Girona Talent"
+    assert [p["company"] for p in data["ungrouped"]] == ["Legacy Co"]
+
+
+def test_results_unknown_kind_404(client):
+    assert client.get("/api/results/bogus").status_code == 404
+
+
 def test_get_run_status(client):
     run_id = db.create_run("companies", "Acme", 1)
     db.set_run_total(run_id, 1)

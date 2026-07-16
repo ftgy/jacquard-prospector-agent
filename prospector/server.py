@@ -85,6 +85,14 @@ def api_stats():
     return db.stats()
 
 
+@app.get("/api/results/{kind}")
+def api_results(kind: str):
+    """Prospects grouped by the query (run) that produced them, for one kind."""
+    if kind not in ("discover", "companies"):
+        raise HTTPException(404, "unknown kind")
+    return db.grouped_results(kind)
+
+
 # --- runs --------------------------------------------------------------------
 
 @app.post("/api/runs")
@@ -128,7 +136,8 @@ def api_run(run_id: int):
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html")
+    # no-cache so dashboard edits always load fresh (the browser revalidates).
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 # Serve any other static assets (none required today, but future-proof).

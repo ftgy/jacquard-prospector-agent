@@ -150,3 +150,53 @@ def test_prospect_linked_to_run():
     run_id = db.create_run("companies", "Acme", 1)
     pid = db.insert_prospect(make_record("Acme"), run_id=run_id)
     assert db.get_prospect(pid)["run_id"] == run_id
+
+
+def test_list_runs_filter_by_kind():
+    db.create_run("discover", "agencies", 3)
+    db.create_run("companies", "Acme", 1)
+    db.create_run("discover", "law firms", 5)
+    kinds = [r["kind"] for r in db.list_runs(kind="discover")]
+    assert kinds == ["discover", "discover"]
+    assert len(db.list_runs(kind="companies")) == 1
+
+
+def test_list_prospects_by_run_id():
+    r1 = db.create_run("discover", "n1", 1)
+    r2 = db.create_run("discover", "n2", 1)
+    db.insert_prospect(make_record("InRun1"), run_id=r1)
+    db.insert_prospect(make_record("InRun2"), run_id=r2)
+    db.insert_prospect(make_record("Loose"))  # no run
+    assert [p["company"] for p in db.list_prospects(run_id=r1)] == ["InRun1"]
+    assert [p["company"] for p in db.list_prospects(ungrouped=True)] == ["Loose"]
+
+
+# --- grouped results ---------------------------------------------------------
+
+def test_grouped_results_by_query():
+    r1 = db.create_run("discover", "recruiting in BCN", 2)
+    db.insert_prospect(make_record("Kulturo", fit=70), run_id=r1)
+    db.insert_prospect(make_record("Talent Co", fit=90), run_id=r1)
+    r2 = db.create_run("discover", "law firms in VLC", 1)
+    db.insert_prospect(make_record("Lex", fit=60), run_id=r2)
+    db.insert_prospect(make_record("Imported One"))  # ungrouped
+
+    data = db.grouped_results("discover")
+    # newest run first, each carries its query and its prospects (sorted by fit)
+    assert data["groups"][0]["run"]["query"] == "law firms in VLC"
+    assert data["groups"][1]["run"]["query"] == "recruiting in BCN"
+    bcn = data["groups"][1]["prospects"]
+    assert [p["company"] for p in bcn] == ["Talent Co", "Kulturo"]  # 90 before 70
+    assert [p["company"] for p in data["ungrouped"]] == ["Imported One"]
+
+
+def test_grouped_results_excludes_other_kinds():
+    rd = db.create_run("discover", "a niche", 1)
+    db.insert_prospect(make_record("NicheCo"), run_id=rd)
+    rc = db.create_run("companies", "Acme", 1)
+    db.insert_prospect(make_record("Acme"), run_id=rc)
+
+    disc = db.grouped_results("discover")
+    assert [g["run"]["query"] for g in disc["groups"]] == ["a niche"]
+    comp = db.grouped_results("companies")
+    assert [g["run"]["query"] for g in comp["groups"]] == ["Acme"]

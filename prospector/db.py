@@ -119,12 +119,16 @@ def get_run(run_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def list_runs(limit: int = 25) -> list[dict]:
+def list_runs(kind: str | None = None, limit: int = 25) -> list[dict]:
+    sql = "SELECT * FROM runs"
+    params: list = []
+    if kind:
+        sql += " WHERE kind = ?"
+        params.append(kind)
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
     with _connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
 # --- prospects ---------------------------------------------------------------
@@ -187,9 +191,19 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
 
 
 def list_prospects(tier: str | None = None, min_score: int | None = None,
-                   q: str | None = None, sort: str = "fit") -> list[dict]:
-    """Filtered/sorted summary list for the table. sort: 'fit' | 'recent' | 'company'."""
+                   q: str | None = None, sort: str = "fit",
+                   run_id: int | None = None, ungrouped: bool = False) -> list[dict]:
+    """Filtered/sorted summary list for the table. sort: 'fit' | 'recent' | 'company'.
+
+    run_id restricts to one run's prospects; ungrouped=True restricts to prospects
+    with no run (imported/legacy). The two are mutually exclusive — ungrouped wins.
+    """
     where, params = [], []
+    if ungrouped:
+        where.append("run_id IS NULL")
+    elif run_id is not None:
+        where.append("run_id = ?")
+        params.append(run_id)
     if tier:
         where.append("tier = ?")
         params.append(tier)
@@ -228,6 +242,18 @@ def delete_prospect(prospect_id: int) -> bool:
     with _connect() as conn:
         cur = conn.execute("DELETE FROM prospects WHERE id=?", (prospect_id,))
         return cur.rowcount > 0
+
+
+def grouped_results(kind: str) -> dict:
+    """Results grouped by the run (query) that produced them, for one kind.
+
+    Returns {"groups": [{"run": {...}, "prospects": [...]}, ...],  # newest run first
+             "ungrouped": [...]}  where ungrouped are prospects with no run
+    (imported/legacy). Prospect lists are summary rows, sorted by fit.
+    """
+    runs = list_runs(kind=kind, limit=200)
+    groups = [{"run": r, "prospects": list_prospects(run_id=r["id"])} for r in runs]
+    return {"groups": groups, "ungrouped": list_prospects(ungrouped=True)}
 
 
 def stats() -> dict:

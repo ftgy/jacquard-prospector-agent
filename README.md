@@ -92,11 +92,19 @@ the database once:
 python scripts/import_results.py
 ```
 
-The panel shows ranked prospects with fit-signal meters and a tier breakdown,
-a detail drawer (pain points → agent solutions, buying signals, sources), a
-niche suggester (city → clickable niches), and a run panel that discovers a niche
-or qualifies named companies, streaming results into the table as each company
-finishes. Both light and dark themes.
+The dashboard has three tabs:
+
+- **Niches** — type a city, get clickable niche suggestions; picking one loads it
+  into the next tab.
+- **Research a niche** — run discovery on a niche. Results are grouped under the
+  query that produced them, so you can see which niche each prospect came from.
+- **Research companies** — qualify specific named companies, likewise grouped by
+  the query.
+
+Each prospect row opens a detail drawer (pain points → agent solutions, buying
+signals, sources). A stat rail shows the tier breakdown and average fit, and runs
+stream their results into their group as each company finishes. Both light and
+dark themes.
 
 ## How search works (and why it's swappable)
 
