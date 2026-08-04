@@ -399,3 +399,77 @@ def run_prospect(client: anthropic.Anthropic, company: str, icp: str,
     verdict["research_summary"] = research["text"]
     verdict["sources"] = research["sources"]
     return verdict
+
+
+# --- Stage 3: outreach email -------------------------------------------------
+
+EMAIL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "subject": {
+            "type": "string",
+            "description": "A short, specific subject line — not clickbait.",
+        },
+        "body": {
+            "type": "string",
+            "description": "Plain-text email body, greeting through sign-off. Use "
+                           "[Your name] as the sign-off placeholder.",
+        },
+    },
+    "required": ["subject", "body"],
+    "additionalProperties": False,
+}
+
+
+def _email_system(icp: str) -> str:
+    return f"""You write a cold outreach email on behalf of the consultant \
+described in the ICP below, to a company they researched. The goal is to start a \
+conversation, not to close a sale.
+
+Rules:
+- Short: ~120-160 words. Busy people skim.
+- Specific: open with something real about THIS company (use the outreach angle
+  and the concrete pain points from the research). No generic "I love what you do".
+- Tie one or two pains to what the consultant does — a concrete, plausible way an
+  AI agent could remove that pain. Don't overpromise or invent facts.
+- One clear, low-friction ask: a brief call or a reply. No pushy urgency.
+- Human and plain-spoken. No corporate buzzwords, no "I hope this email finds you
+  well", no exclamation-mark hype.
+- Plain text only. End with "[Your name]" as the sign-off — don't invent a name.
+
+Here is the consultant's ICP (who they are and what they offer):
+{icp}"""
+
+
+def _email_context(record: dict) -> str:
+    """Compact the qualified record into the facts the email should draw on."""
+    lines = [f"Company: {record.get('company', '')}"]
+    if record.get("one_line"):
+        lines.append(f"Verdict: {record['one_line']}")
+    if record.get("outreach_angle"):
+        lines.append(f"Outreach angle: {record['outreach_angle']}")
+    for p in (record.get("pain_points") or []):
+        lines.append(f"- Pain: {p.get('pain','')} | Evidence: {p.get('evidence','')} "
+                     f"| An agent could: {p.get('agent_solution','')}")
+    if record.get("buying_signals"):
+        lines.append("Buying signals: " + "; ".join(record["buying_signals"]))
+    if record.get("research_summary"):
+        lines.append(f"\nResearch notes:\n{record['research_summary']}")
+    return "\n".join(lines)
+
+
+def draft_outreach_email(client: anthropic.Anthropic, record: dict,
+                         icp: str) -> dict:
+    """Draft a cold outreach email from a qualified prospect record.
+
+    A single reasoning pass over research we already have (no web search), like
+    niche suggestion. Returns {'subject', 'body'}.
+    """
+    return _structure(
+        client,
+        _email_system(icp),
+        "Write a cold outreach email to this company, grounded only in the facts "
+        "below.\n\n=== PROSPECT ===\n" + _email_context(record),
+        EMAIL_SCHEMA,
+        max_tokens=2000,
+    )

@@ -141,6 +141,33 @@ def test_suggest_niches_for_passes_through(monkeypatch):
     assert captured["icp"] is service.ICP  # qualifies against the configured ICP
 
 
+def test_draft_email_for_uses_stored_record(monkeypatch):
+    captured = {}
+
+    def fake_draft(client, record, icp):
+        captured.update(company=record["company"], icp=icp)
+        return {"subject": "s", "body": "b"}
+
+    monkeypatch.setattr(service, "draft_outreach_email", fake_draft)
+    pid = db.insert_prospect(make_record("Acme"))
+    out = service.draft_email_for(pid, client=FakeClient())
+
+    assert out == {"subject": "s", "body": "b"}
+    assert captured["company"] == "Acme"
+    assert captured["icp"] is service.ICP
+
+
+def test_draft_email_for_missing_prospect_raises():
+    with pytest.raises(LookupError):
+        service.draft_email_for(9999, client=FakeClient())
+
+
+def test_draft_email_for_rejects_error_record():
+    pid = db.insert_prospect({"company": "Broken", "error": "rate limited"})
+    with pytest.raises(ValueError):
+        service.draft_email_for(pid, client=FakeClient())
+
+
 def test_start_run_async_rejects_unknown_kind():
     with pytest.raises(ValueError):
         service.start_run_async("bogus", "x", 1, client=FakeClient())

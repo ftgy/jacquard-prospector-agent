@@ -14,7 +14,12 @@ import threading
 import anthropic
 
 from . import db
-from .agent import discover_candidates, run_prospect, suggest_niches
+from .agent import (
+    discover_candidates,
+    draft_outreach_email,
+    run_prospect,
+    suggest_niches,
+)
 from .config import make_client, using_proxy
 from .icp import ICP
 
@@ -121,3 +126,21 @@ def suggest_niches_for(location: str, count: int = 8,
     """
     client = client or make_client()
     return suggest_niches(client, location, ICP, count)
+
+
+def draft_email_for(prospect_id: int,
+                    client: anthropic.Anthropic | None = None) -> dict:
+    """Draft an outreach email for one stored prospect. Returns {'subject','body'}.
+
+    Synchronous (one reasoning call over the saved research). Raises LookupError if
+    the prospect is gone, ValueError if it's a failed-research row with nothing to
+    write from.
+    """
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    if rec.get("error"):
+        raise ValueError("This entry is a failed research record — there's nothing "
+                         "to write an email from.")
+    client = client or make_client()
+    return draft_outreach_email(client, rec, ICP)

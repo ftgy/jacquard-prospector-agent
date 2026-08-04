@@ -249,6 +249,20 @@
   .notes-actions { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
   .notes-saved { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 
+  /* outreach email */
+  .email-out { margin-top: 12px; }
+  .email-draft .email-subj { display: flex; gap: 10px; align-items: baseline; padding: 9px 12px;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 9px; margin-bottom: 10px; }
+  .email-subj .k { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    font-family: var(--mono); flex-shrink: 0; }
+  .email-subj .subjtext { font-weight: 600; }
+  textarea.email-body { width: 100%; min-height: 220px; resize: vertical; font-family: inherit; font-size: 13px;
+    line-height: 1.6; color: var(--ink); background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: 10px; padding: 12px 14px; }
+  textarea.email-body:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    outline-offset: 1px; border-color: var(--accent); }
+  .email-actions { margin-top: 9px; display: flex; gap: 10px; }
+
   /* drawer footer / danger */
   .drawer .dfoot { margin-top: auto; padding: 14px 22px; border-top: 1px solid var(--hairline);
                    display: flex; justify-content: flex-end; background: var(--surface); }
@@ -589,11 +603,48 @@ async function openDrawer(id){
     if (r.sources?.length)
       body.appendChild(sec(`Sources (${r.sources.length})`,
         `<div class="sources">${r.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`).join("")}</div>`));
+    body.appendChild(emailSection(id));
   }
   body.appendChild(notesSection(id, r.notes || ""));
   $("#scrim").classList.add("show"); $("#drawer").classList.add("show");
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
+
+function emailSection(id){
+  const s = el("div", "sec email", `<h4>Outreach email</h4>`);
+  const gen = el("button", "icon-btn primary", "✉ Generate email");
+  const out = el("div", "email-out");
+  gen.onclick = async () => {
+    gen.disabled = true; const was = gen.textContent; gen.textContent = "✉ Drafting…";
+    try {
+      const res = await fetch(`/api/prospects/${id}/email`, {method:"POST"});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      renderEmail(out, await res.json());
+      gen.textContent = "✉ Regenerate";
+    } catch (e){ toast("Couldn't generate email: " + e.message); gen.textContent = was; }
+    finally { gen.disabled = false; }
+  };
+  s.append(gen, out);
+  return s;
+}
+
+function renderEmail(out, email){
+  out.innerHTML = "";
+  const wrap = el("div", "email-draft");
+  wrap.appendChild(el("div", "email-subj",
+    `<span class="k">Subject</span><span class="subjtext">${esc(email.subject)}</span>`));
+  const ta = el("textarea", "email-body"); ta.value = email.body;
+  const actions = el("div", "email-actions");
+  const copy = el("button", "icon-btn", "⧉ Copy");
+  copy.onclick = async () => {
+    const text = `Subject: ${email.subject}\n\n${ta.value}`;
+    try { await navigator.clipboard.writeText(text); toast("Email copied to clipboard."); }
+    catch { toast("Couldn't copy — select the text and copy manually."); }
+  };
+  actions.appendChild(copy);
+  wrap.append(ta, actions);
+  out.appendChild(wrap);
+}
 
 function notesSection(id, notes){
   const s = el("div", "sec notes", `<h4>Your notes</h4>`);

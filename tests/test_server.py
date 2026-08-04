@@ -77,6 +77,40 @@ def test_set_notes_missing_prospect_404(client):
     assert client.put("/api/prospects/9999/notes", json={"notes": "x"}).status_code == 404
 
 
+def test_draft_email_endpoint(client, monkeypatch):
+    from prospector import service
+    monkeypatch.setattr(service, "draft_email_for",
+                        lambda pid: {"subject": "Quick idea for Acme", "body": "Hi…"})
+    pid = db.insert_prospect(make_record("Acme"))
+    r = client.post(f"/api/prospects/{pid}/email")
+    assert r.status_code == 200
+    assert r.json()["subject"] == "Quick idea for Acme"
+
+
+def test_draft_email_missing_prospect_404(client):
+    # real service path: prospect doesn't exist -> LookupError -> 404
+    assert client.post("/api/prospects/9999/email").status_code == 404
+
+
+def test_draft_email_error_record_400(client):
+    pid = db.insert_prospect({"company": "Broken", "error": "boom"})
+    r = client.post(f"/api/prospects/{pid}/email")
+    assert r.status_code == 400
+    assert "failed research" in r.json()["detail"]
+
+
+def test_draft_email_api_failure_502(client, monkeypatch):
+    from prospector import service
+
+    def boom(pid):
+        raise Exception("model exploded")
+    monkeypatch.setattr(service, "draft_email_for", boom)
+    pid = db.insert_prospect(make_record("Acme"))
+    r = client.post(f"/api/prospects/{pid}/email")
+    assert r.status_code == 502
+    assert "exploded" in r.json()["detail"]
+
+
 def test_create_run_validation(client):
     assert client.post("/api/runs", json={"kind": "bogus", "query": "x"}).status_code == 422
     assert client.post("/api/runs", json={"kind": "discover", "query": ""}).status_code == 422

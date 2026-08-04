@@ -91,6 +91,22 @@ def api_set_notes(prospect_id: int, req: NotesRequest):
     return {"id": prospect_id, "notes": req.notes.strip() or None}
 
 
+@app.post("/api/prospects/{prospect_id}/email")
+def api_draft_email(prospect_id: int):
+    """Draft a cold outreach email from a prospect's research. Synchronous."""
+    from .service import draft_email_for, friendly_api_error
+    try:
+        return draft_email_for(prospect_id)
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except SystemExit as e:  # make_client() with no API key
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, friendly_api_error(e))
+
+
 @app.get("/api/stats")
 def api_stats():
     return db.stats()
