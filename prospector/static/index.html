@@ -251,6 +251,7 @@
 
   /* outreach email */
   .email-out { margin-top: 12px; }
+  .email-saved { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 8px; }
   .email-draft .email-subj { display: flex; gap: 10px; align-items: baseline; padding: 9px 12px;
     background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 9px; margin-bottom: 10px; }
   .email-subj .k { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
@@ -603,17 +604,18 @@ async function openDrawer(id){
     if (r.sources?.length)
       body.appendChild(sec(`Sources (${r.sources.length})`,
         `<div class="sources">${r.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`).join("")}</div>`));
-    body.appendChild(emailSection(id));
+    body.appendChild(emailSection(id, r.email));
   }
   body.appendChild(notesSection(id, r.notes || ""));
   $("#scrim").classList.add("show"); $("#drawer").classList.add("show");
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
 
-function emailSection(id){
+function emailSection(id, existing){
   const s = el("div", "sec email", `<h4>Outreach email</h4>`);
-  const gen = el("button", "icon-btn primary", "✉ Generate email");
+  const gen = el("button", "icon-btn primary", existing ? "✉ Regenerate" : "✉ Generate email");
   const out = el("div", "email-out");
+  if (existing) renderEmail(out, existing);
   gen.onclick = async () => {
     gen.disabled = true; const was = gen.textContent; gen.textContent = "✉ Drafting…";
     try {
@@ -631,6 +633,8 @@ function emailSection(id){
 function renderEmail(out, email){
   out.innerHTML = "";
   const wrap = el("div", "email-draft");
+  if (email.generated_at)
+    wrap.appendChild(el("div", "email-saved", `Saved draft · ${esc(email.generated_at.slice(0,10))}`));
   wrap.appendChild(el("div", "email-subj",
     `<span class="k">Subject</span><span class="subjtext">${esc(email.subject)}</span>`));
   const ta = el("textarea", "email-body"); ta.value = email.body;

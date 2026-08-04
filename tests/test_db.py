@@ -126,6 +126,29 @@ def test_notes_absent_from_summary_list():
     assert "notes" not in db.list_prospects()[0]  # summary rows stay light
 
 
+def test_email_roundtrip():
+    pid = db.insert_prospect(make_record("Mailed"))
+    assert db.get_prospect(pid)["email"] is None  # none by default
+    assert db.set_prospect_email(pid, "Quick idea", "Hi there…") is True
+    email = db.get_prospect(pid)["email"]
+    assert email["subject"] == "Quick idea"
+    assert email["body"] == "Hi there…"
+    assert email["generated_at"]  # timestamped
+    # regenerating overwrites the stored draft
+    db.set_prospect_email(pid, "New subject", "New body")
+    assert db.get_prospect(pid)["email"]["subject"] == "New subject"
+
+
+def test_set_email_missing_prospect():
+    assert db.set_prospect_email(9999, "s", "b") is False
+
+
+def test_email_absent_from_summary_list():
+    pid = db.insert_prospect(make_record("Mailed"))
+    db.set_prospect_email(pid, "s", "b")
+    assert "email" not in db.list_prospects()[0]  # summary rows stay light
+
+
 # --- runs --------------------------------------------------------------------
 
 def test_run_lifecycle():

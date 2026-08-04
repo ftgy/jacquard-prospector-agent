@@ -155,6 +155,8 @@ def test_draft_email_for_uses_stored_record(monkeypatch):
     assert out == {"subject": "s", "body": "b"}
     assert captured["company"] == "Acme"
     assert captured["icp"] is service.ICP
+    # the draft is persisted, so reopening the prospect shows it
+    assert db.get_prospect(pid)["email"]["subject"] == "s"
 
 
 def test_draft_email_for_missing_prospect_raises():

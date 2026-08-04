@@ -143,4 +143,7 @@ def draft_email_for(prospect_id: int,
         raise ValueError("This entry is a failed research record — there's nothing "
                          "to write an email from.")
     client = client or make_client()
-    return draft_outreach_email(client, rec, ICP)
+    email = draft_outreach_email(client, rec, ICP)
+    db.set_prospect_email(prospect_id, email.get("subject", ""),
+                          email.get("body", ""))
+    return email
