@@ -322,7 +322,7 @@
     </div>
   </section>
 
-  <!-- filters (research tabs only) -->
+  <!-- filters (research tabs only; relocated into the active pane on tab switch) -->
   <div class="filters" id="filters">
     <span class="chip on" data-tier="">All</span>
     <span class="chip" data-tier="A"><span class="swatch" style="background:var(--tier-a)"></span>A</span>
@@ -434,7 +434,13 @@ function switchTab(tab){
   $("#stats").style.display = research ? "" : "none";
   $("#filters").style.display = research ? "" : "none";
   location.hash = tab;
-  if (research){ loadStats(); loadGroups(tab); }
+  if (research){
+    // Relocate the shared filter bar into the active pane, just above its
+    // results (below the run panel) — one element serves both research tabs.
+    const groups = $("#" + tab + "-groups");
+    groups.parentNode.insertBefore($("#filters"), groups);
+    loadStats(); loadGroups(tab);
+  }
 }
 
 // --- stats ---
