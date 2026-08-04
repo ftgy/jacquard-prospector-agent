@@ -65,6 +65,18 @@ def test_delete_prospect(client):
     assert client.delete(f"/api/prospects/{pid}").status_code == 404
 
 
+def test_set_notes_endpoint(client):
+    pid = db.insert_prospect(make_record("Noted"))
+    r = client.put(f"/api/prospects/{pid}/notes", json={"notes": "  followed up 8/4  "})
+    assert r.status_code == 200
+    assert r.json()["notes"] == "followed up 8/4"
+    assert client.get(f"/api/prospects/{pid}").json()["notes"] == "followed up 8/4"
+
+
+def test_set_notes_missing_prospect_404(client):
+    assert client.put("/api/prospects/9999/notes", json={"notes": "x"}).status_code == 404
+
+
 def test_create_run_validation(client):
     assert client.post("/api/runs", json={"kind": "bogus", "query": "x"}).status_code == 422
     assert client.post("/api/runs", json={"kind": "discover", "query": ""}).status_code == 422

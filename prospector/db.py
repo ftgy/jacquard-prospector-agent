@@ -71,6 +71,7 @@ def init_db() -> None:
                 buying_signals   TEXT,   -- JSON
                 red_flags        TEXT,   -- JSON
                 sources          TEXT,   -- JSON
+                notes            TEXT,   -- user-authored, free text
                 error            TEXT,
                 created_at       TEXT NOT NULL
             );
@@ -79,6 +80,10 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_prospects_score ON prospects(fit_score);
             """
         )
+        # Migrate DBs created before `notes` existed.
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(prospects)")}
+        if "notes" not in cols:
+            conn.execute("ALTER TABLE prospects ADD COLUMN notes TEXT")
 
 
 # --- runs --------------------------------------------------------------------
@@ -184,6 +189,7 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
         "created_at": row["created_at"],
     }
     if full:
+        rec["notes"] = row["notes"]
         rec["research_summary"] = row["research_summary"]
         for field in _JSON_FIELDS:
             rec[field] = json.loads(row[field]) if row[field] else []
@@ -241,6 +247,16 @@ def get_prospect(prospect_id: int) -> dict | None:
 def delete_prospect(prospect_id: int) -> bool:
     with _connect() as conn:
         cur = conn.execute("DELETE FROM prospects WHERE id=?", (prospect_id,))
+        return cur.rowcount > 0
+
+
+def set_prospect_notes(prospect_id: int, notes: str | None) -> bool:
+    """Store the user's free-text note for a prospect. Empty/blank clears it."""
+    notes = (notes or "").strip() or None
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET notes=? WHERE id=?", (notes, prospect_id)
+        )
         return cur.rowcount > 0
 
 

@@ -203,7 +203,7 @@
   .drawer .dhead { padding: 20px 22px 16px; border-bottom: 1px solid var(--hairline); }
   .drawer .dhead .row { display: flex; align-items: flex-start; gap: 12px; }
   .drawer h3 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
-  .drawer .dbody { overflow-y: auto; padding: 18px 22px 40px; }
+  .drawer .dbody { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px 40px; }
   .drawer .close { margin-left: auto; background: none; border: 0; color: var(--muted);
                    font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px; }
   .drawer .close:hover { color: var(--ink); }
@@ -236,6 +236,22 @@
   .errbox { background: color-mix(in srgb, var(--tier-d) 10%, var(--surface));
             border: 1px solid color-mix(in srgb, var(--tier-d) 35%, transparent); border-radius: 10px;
             padding: 12px 14px; color: var(--ink); font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; }
+
+  /* notes */
+  .notes textarea { width: 100%; min-height: 84px; resize: vertical; font-family: inherit; font-size: 13px;
+    line-height: 1.5; color: var(--ink); background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: 10px; padding: 11px 13px; }
+  .notes textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    outline-offset: 1px; border-color: var(--accent); }
+  .notes-actions { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
+  .notes-saved { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+
+  /* drawer footer / danger */
+  .drawer .dfoot { margin-top: auto; padding: 14px 22px; border-top: 1px solid var(--hairline);
+                   display: flex; justify-content: flex-end; background: var(--surface); }
+  .icon-btn.danger { color: var(--tier-d); border-color: color-mix(in srgb, var(--tier-d) 40%, var(--hairline)); }
+  .icon-btn.danger:hover { background: color-mix(in srgb, var(--tier-d) 12%, var(--surface));
+                           border-color: var(--tier-d); color: var(--tier-d); }
 
   .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
            background: var(--ink); color: var(--surface); padding: 10px 18px; border-radius: 10px;
@@ -353,6 +369,9 @@
     </div>
   </div>
   <div class="dbody" id="d-body"></div>
+  <div class="dfoot">
+    <button class="icon-btn danger" id="d-delete">🗑 Delete entry</button>
+  </div>
 </aside>
 
 <div class="toast" id="toast"></div>
@@ -518,6 +537,7 @@ function prospectRow(r){
 // --- detail drawer ---
 async function openDrawer(id){
   const r = await fetch("/api/prospects/" + id).then(x=>x.json());
+  openDrawer._id = id;
   const isErr = r.error != null;
   $("#d-company").textContent = r.company;
   $("#d-oneline").textContent = isErr ? "" : (r.one_line || "");
@@ -549,12 +569,50 @@ async function openDrawer(id){
       body.appendChild(sec(`Sources (${r.sources.length})`,
         `<div class="sources">${r.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`).join("")}</div>`));
   }
+  body.appendChild(notesSection(id, r.notes || ""));
   $("#scrim").classList.add("show"); $("#drawer").classList.add("show");
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
+
+function notesSection(id, notes){
+  const s = el("div", "sec notes", `<h4>Your notes</h4>`);
+  const ta = el("textarea"); ta.placeholder = "Add a note — outreach status, context, reminders…"; ta.value = notes;
+  const actions = el("div", "notes-actions");
+  const save = el("button", "icon-btn primary", "Save note");
+  const status = el("span", "notes-saved");
+  save.onclick = async () => {
+    save.disabled = true; const prev = ta.value;
+    try {
+      const res = await fetch(`/api/prospects/${id}/notes`, {method:"PUT",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ notes: prev })});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      status.textContent = "Saved"; toast("Note saved.");
+    } catch (e){ toast("Couldn't save note: " + e.message); }
+    finally { save.disabled = false; }
+  };
+  ta.oninput = () => { status.textContent = ""; };
+  actions.append(save, status);
+  s.append(ta, actions);
+  return s;
+}
 function closeDrawer(){ $("#scrim").classList.remove("show"); $("#drawer").classList.remove("show"); }
 $("#d-close").onclick = closeDrawer; $("#scrim").onclick = closeDrawer;
 addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+
+$("#d-delete").onclick = async () => {
+  const id = openDrawer._id, name = $("#d-company").textContent;
+  if (id == null) return;
+  if (!confirm(`Delete “${name}” from the results? This can't be undone.`)) return;
+  const btn = $("#d-delete"); btn.disabled = true;
+  try {
+    const res = await fetch("/api/prospects/" + id, {method:"DELETE"});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    closeDrawer();
+    toast("Entry deleted.");
+    if (state.tab !== "niches"){ loadStats(); loadGroups(state.tab); }
+  } catch (e){ toast("Couldn't delete: " + e.message); }
+  finally { btn.disabled = false; }
+};
 
 // --- filters ---
 document.querySelectorAll(".chip[data-tier]").forEach(c => c.onclick = () => {

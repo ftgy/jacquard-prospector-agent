@@ -106,6 +106,26 @@ def test_delete_prospect():
     assert db.delete_prospect(pid) is False  # already gone
 
 
+def test_notes_roundtrip_and_clear():
+    pid = db.insert_prospect(make_record("Noted"))
+    assert db.get_prospect(pid)["notes"] is None  # none by default
+    assert db.set_prospect_notes(pid, "  called on 8/4, keen  ") is True
+    assert db.get_prospect(pid)["notes"] == "called on 8/4, keen"  # trimmed
+    # blank clears it back to NULL
+    assert db.set_prospect_notes(pid, "   ") is True
+    assert db.get_prospect(pid)["notes"] is None
+
+
+def test_set_notes_missing_prospect():
+    assert db.set_prospect_notes(9999, "x") is False
+
+
+def test_notes_absent_from_summary_list():
+    pid = db.insert_prospect(make_record("Noted"))
+    db.set_prospect_notes(pid, "some note")
+    assert "notes" not in db.list_prospects()[0]  # summary rows stay light
+
+
 # --- runs --------------------------------------------------------------------
 
 def test_run_lifecycle():

@@ -57,6 +57,10 @@ class NicheRequest(BaseModel):
     count: int = Field(8, ge=1, le=20)
 
 
+class NotesRequest(BaseModel):
+    notes: str = Field("", max_length=5000)
+
+
 # --- prospects ---------------------------------------------------------------
 
 @app.get("/api/prospects")
@@ -78,6 +82,13 @@ def api_delete_prospect(prospect_id: int):
     if not db.delete_prospect(prospect_id):
         raise HTTPException(404, "prospect not found")
     return {"deleted": prospect_id}
+
+
+@app.put("/api/prospects/{prospect_id}/notes")
+def api_set_notes(prospect_id: int, req: NotesRequest):
+    if not db.set_prospect_notes(prospect_id, req.notes):
+        raise HTTPException(404, "prospect not found")
+    return {"id": prospect_id, "notes": req.notes.strip() or None}
 
 
 @app.get("/api/stats")
