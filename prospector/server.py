@@ -61,6 +61,10 @@ class NotesRequest(BaseModel):
     notes: str = Field("", max_length=5000)
 
 
+class EmailRequest(BaseModel):
+    language: str = Field("english", pattern="^(english|spanish)$")
+
+
 # --- prospects ---------------------------------------------------------------
 
 @app.get("/api/prospects")
@@ -92,11 +96,15 @@ def api_set_notes(prospect_id: int, req: NotesRequest):
 
 
 @app.post("/api/prospects/{prospect_id}/email")
-def api_draft_email(prospect_id: int):
-    """Draft a cold outreach email from a prospect's research. Synchronous."""
+def api_draft_email(prospect_id: int, req: EmailRequest | None = None):
+    """Draft a cold outreach email from a prospect's research. Synchronous.
+
+    Optional body {language: english|spanish}; defaults to english.
+    """
     from .service import draft_email_for, friendly_api_error
+    language = (req or EmailRequest()).language
     try:
-        return draft_email_for(prospect_id)
+        return draft_email_for(prospect_id, language)
     except LookupError:
         raise HTTPException(404, "prospect not found")
     except ValueError as e:

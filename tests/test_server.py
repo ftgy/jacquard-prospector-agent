@@ -79,12 +79,29 @@ def test_set_notes_missing_prospect_404(client):
 
 def test_draft_email_endpoint(client, monkeypatch):
     from prospector import service
-    monkeypatch.setattr(service, "draft_email_for",
-                        lambda pid: {"subject": "Quick idea for Acme", "body": "Hi…"})
+    calls = {}
+
+    def fake(pid, language):
+        calls.update(pid=pid, language=language)
+        return {"subject": "Quick idea for Acme", "body": "Hi…", "language": language}
+
+    monkeypatch.setattr(service, "draft_email_for", fake)
     pid = db.insert_prospect(make_record("Acme"))
+    # no body -> defaults to english
     r = client.post(f"/api/prospects/{pid}/email")
     assert r.status_code == 200
     assert r.json()["subject"] == "Quick idea for Acme"
+    assert calls["language"] == "english"
+    # explicit spanish flows through
+    r = client.post(f"/api/prospects/{pid}/email", json={"language": "spanish"})
+    assert r.status_code == 200
+    assert calls["language"] == "spanish"
+
+
+def test_draft_email_rejects_bad_language(client):
+    pid = db.insert_prospect(make_record("Acme"))
+    assert client.post(f"/api/prospects/{pid}/email",
+                       json={"language": "french"}).status_code == 422
 
 
 def test_draft_email_missing_prospect_404(client):
@@ -102,7 +119,7 @@ def test_draft_email_error_record_400(client):
 def test_draft_email_api_failure_502(client, monkeypatch):
     from prospector import service
 
-    def boom(pid):
+    def boom(pid, language):
         raise Exception("model exploded")
     monkeypatch.setattr(service, "draft_email_for", boom)
     pid = db.insert_prospect(make_record("Acme"))

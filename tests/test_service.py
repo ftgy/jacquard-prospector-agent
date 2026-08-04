@@ -144,19 +144,22 @@ def test_suggest_niches_for_passes_through(monkeypatch):
 def test_draft_email_for_uses_stored_record(monkeypatch):
     captured = {}
 
-    def fake_draft(client, record, icp):
-        captured.update(company=record["company"], icp=icp)
+    def fake_draft(client, record, icp, language):
+        captured.update(company=record["company"], icp=icp, language=language)
         return {"subject": "s", "body": "b"}
 
     monkeypatch.setattr(service, "draft_outreach_email", fake_draft)
     pid = db.insert_prospect(make_record("Acme"))
-    out = service.draft_email_for(pid, client=FakeClient())
+    out = service.draft_email_for(pid, language="spanish", client=FakeClient())
 
-    assert out == {"subject": "s", "body": "b"}
+    assert out == {"subject": "s", "body": "b", "language": "spanish"}
     assert captured["company"] == "Acme"
     assert captured["icp"] is service.ICP
-    # the draft is persisted, so reopening the prospect shows it
-    assert db.get_prospect(pid)["email"]["subject"] == "s"
+    assert captured["language"] == "spanish"
+    # the draft is persisted with its language, so reopening shows it
+    stored = db.get_prospect(pid)["email"]
+    assert stored["subject"] == "s"
+    assert stored["language"] == "spanish"
 
 
 def test_draft_email_for_missing_prospect_raises():

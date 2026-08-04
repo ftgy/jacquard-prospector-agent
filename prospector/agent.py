@@ -421,10 +421,18 @@ EMAIL_SCHEMA = {
 }
 
 
-def _email_system(icp: str) -> str:
+_LANGUAGES = {"english": "English", "spanish": "Spanish"}
+
+
+def _email_system(icp: str, language: str) -> str:
+    lang = _LANGUAGES.get(language, "English")
     return f"""You write a cold outreach email on behalf of the consultant \
 described in the ICP below, to a company they researched. The goal is to start a \
 conversation, not to close a sale.
+
+Write the ENTIRE email — subject and body — in {lang}. Use natural, idiomatic \
+business {lang} (for Spanish, address the reader with the polite "usted"). Keep \
+"[Your name]" as-is for the sign-off.
 
 Rules:
 - Short: ~120-160 words. Busy people skim.
@@ -458,16 +466,17 @@ def _email_context(record: dict) -> str:
     return "\n".join(lines)
 
 
-def draft_outreach_email(client: anthropic.Anthropic, record: dict,
-                         icp: str) -> dict:
+def draft_outreach_email(client: anthropic.Anthropic, record: dict, icp: str,
+                         language: str = "english") -> dict:
     """Draft a cold outreach email from a qualified prospect record.
 
     A single reasoning pass over research we already have (no web search), like
-    niche suggestion. Returns {'subject', 'body'}.
+    niche suggestion. `language` is 'english' or 'spanish'. Returns
+    {'subject', 'body'}.
     """
     return _structure(
         client,
-        _email_system(icp),
+        _email_system(icp, language),
         "Write a cold outreach email to this company, grounded only in the facts "
         "below.\n\n=== PROSPECT ===\n" + _email_context(record),
         EMAIL_SCHEMA,

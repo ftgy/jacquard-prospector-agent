@@ -128,13 +128,14 @@ def suggest_niches_for(location: str, count: int = 8,
     return suggest_niches(client, location, ICP, count)
 
 
-def draft_email_for(prospect_id: int,
+def draft_email_for(prospect_id: int, language: str = "english",
                     client: anthropic.Anthropic | None = None) -> dict:
-    """Draft an outreach email for one stored prospect. Returns {'subject','body'}.
+    """Draft an outreach email for one stored prospect. Returns {'subject','body',
+    'language'}.
 
-    Synchronous (one reasoning call over the saved research). Raises LookupError if
-    the prospect is gone, ValueError if it's a failed-research row with nothing to
-    write from.
+    Synchronous (one reasoning call over the saved research). `language` is
+    'english' or 'spanish'. Raises LookupError if the prospect is gone, ValueError
+    if it's a failed-research row with nothing to write from.
     """
     rec = db.get_prospect(prospect_id)
     if rec is None:
@@ -143,7 +144,8 @@ def draft_email_for(prospect_id: int,
         raise ValueError("This entry is a failed research record — there's nothing "
                          "to write an email from.")
     client = client or make_client()
-    email = draft_outreach_email(client, rec, ICP)
+    email = draft_outreach_email(client, rec, ICP, language)
     db.set_prospect_email(prospect_id, email.get("subject", ""),
-                          email.get("body", ""))
+                          email.get("body", ""), language)
+    email["language"] = language
     return email

@@ -250,6 +250,12 @@
   .notes-saved { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 
   /* outreach email */
+  .email-gen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lang-seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
+  .lang-opt { background: var(--surface-2); border: 0; color: var(--ink-2); padding: 7px 12px; cursor: pointer;
+    font-size: 12px; font-family: var(--mono); }
+  .lang-opt + .lang-opt { border-left: 1px solid var(--hairline); }
+  .lang-opt.on { background: var(--accent); color: #fff; }
   .email-out { margin-top: 12px; }
   .email-saved { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 8px; }
   .email-draft .email-subj { display: flex; gap: 10px; align-items: baseline; padding: 9px 12px;
@@ -613,28 +619,42 @@ function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`
 
 function emailSection(id, existing){
   const s = el("div", "sec email", `<h4>Outreach email</h4>`);
+  let lang = (existing && existing.language) || "english";
+  const seg = el("div", "lang-seg");
+  const mkOpt = (val, label) => {
+    const b = el("button", "lang-opt" + (val === lang ? " on" : ""), label);
+    b.onclick = () => { lang = val; seg.querySelectorAll(".lang-opt").forEach(x => x.classList.toggle("on", x === b)); };
+    return b;
+  };
+  seg.append(mkOpt("english", "EN"), mkOpt("spanish", "ES"));
+
   const gen = el("button", "icon-btn primary", existing ? "✉ Regenerate" : "✉ Generate email");
   const out = el("div", "email-out");
   if (existing) renderEmail(out, existing);
   gen.onclick = async () => {
     gen.disabled = true; const was = gen.textContent; gen.textContent = "✉ Drafting…";
     try {
-      const res = await fetch(`/api/prospects/${id}/email`, {method:"POST"});
+      const res = await fetch(`/api/prospects/${id}/email`, {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ language: lang })});
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
       renderEmail(out, await res.json());
       gen.textContent = "✉ Regenerate";
     } catch (e){ toast("Couldn't generate email: " + e.message); gen.textContent = was; }
     finally { gen.disabled = false; }
   };
-  s.append(gen, out);
+  const genRow = el("div", "email-gen");
+  genRow.append(seg, gen);
+  s.append(genRow, out);
   return s;
 }
 
 function renderEmail(out, email){
   out.innerHTML = "";
   const wrap = el("div", "email-draft");
-  if (email.generated_at)
-    wrap.appendChild(el("div", "email-saved", `Saved draft · ${esc(email.generated_at.slice(0,10))}`));
+  const bits = [];
+  if (email.generated_at) bits.push("Saved draft · " + email.generated_at.slice(0, 10));
+  if (email.language) bits.push(email.language.charAt(0).toUpperCase() + email.language.slice(1));
+  if (bits.length) wrap.appendChild(el("div", "email-saved", esc(bits.join(" · "))));
   wrap.appendChild(el("div", "email-subj",
     `<span class="k">Subject</span><span class="subjtext">${esc(email.subject)}</span>`));
   const ta = el("textarea", "email-body"); ta.value = email.body;

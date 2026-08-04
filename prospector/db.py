@@ -75,6 +75,7 @@ def init_db() -> None:
                 email_subject    TEXT,   -- last generated outreach email
                 email_body       TEXT,
                 email_at         TEXT,   -- when that email was generated
+                email_lang       TEXT,   -- language it was written in
                 error            TEXT,
                 created_at       TEXT NOT NULL
             );
@@ -85,7 +86,7 @@ def init_db() -> None:
         )
         # Migrate DBs created before newer columns existed.
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(prospects)")}
-        for col in ("notes", "email_subject", "email_body", "email_at"):
+        for col in ("notes", "email_subject", "email_body", "email_at", "email_lang"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT")
 
@@ -208,7 +209,7 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
         rec["notes"] = row["notes"]
         rec["email"] = (
             {"subject": row["email_subject"], "body": row["email_body"],
-             "generated_at": row["email_at"]}
+             "generated_at": row["email_at"], "language": row["email_lang"]}
             if row["email_subject"] else None
         )
         rec["research_summary"] = row["research_summary"]
@@ -281,13 +282,14 @@ def set_prospect_notes(prospect_id: int, notes: str | None) -> bool:
         return cur.rowcount > 0
 
 
-def set_prospect_email(prospect_id: int, subject: str, body: str) -> bool:
-    """Persist the last generated outreach email (and when) for a prospect."""
+def set_prospect_email(prospect_id: int, subject: str, body: str,
+                       language: str = "english") -> bool:
+    """Persist the last generated outreach email (language + when) for a prospect."""
     with _connect() as conn:
         cur = conn.execute(
-            "UPDATE prospects SET email_subject=?, email_body=?, email_at=? "
-            "WHERE id=?",
-            (subject, body, _now(), prospect_id),
+            "UPDATE prospects SET email_subject=?, email_body=?, email_at=?, "
+            "email_lang=? WHERE id=?",
+            (subject, body, _now(), language, prospect_id),
         )
         return cur.rowcount > 0
 
