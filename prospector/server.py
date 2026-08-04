@@ -143,6 +143,14 @@ def api_run(run_id: int):
     return run
 
 
+@app.delete("/api/runs/{run_id}")
+def api_delete_run(run_id: int):
+    """Delete a whole search (run) and all the prospects it produced."""
+    if not db.delete_run(run_id):
+        raise HTTPException(404, "run not found")
+    return {"deleted": run_id}
+
+
 # --- static / dashboard ------------------------------------------------------
 
 @app.get("/")

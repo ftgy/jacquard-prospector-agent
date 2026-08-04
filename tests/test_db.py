@@ -159,6 +159,24 @@ def test_get_missing_run_returns_none():
     assert db.get_run(9999) is None
 
 
+def test_delete_run_removes_run_and_its_prospects():
+    r1 = db.create_run("discover", "n1", 2)
+    p1 = db.insert_prospect(make_record("A"), run_id=r1)
+    p2 = db.insert_prospect(make_record("B"), run_id=r1)
+    r2 = db.create_run("discover", "n2", 1)
+    p3 = db.insert_prospect(make_record("C"), run_id=r2)
+    loose = db.insert_prospect(make_record("Loose"))  # no run
+
+    assert db.delete_run(r1) is True
+    assert db.get_run(r1) is None
+    assert db.get_prospect(p1) is None and db.get_prospect(p2) is None
+    # unrelated run and ungrouped prospects are untouched
+    assert db.get_run(r2) is not None
+    assert db.get_prospect(p3) is not None
+    assert db.get_prospect(loose) is not None
+    assert db.delete_run(r1) is False  # already gone
+
+
 def test_list_runs_newest_first():
     r1 = db.create_run("discover", "first", 1)
     r2 = db.create_run("discover", "second", 1)

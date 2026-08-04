@@ -153,6 +153,15 @@ def test_get_run_404(client):
     assert client.get("/api/runs/9999").status_code == 404
 
 
+def test_delete_run_endpoint(client):
+    run_id = db.create_run("discover", "agencies", 1)
+    pid = db.insert_prospect(make_record("X"), run_id=run_id)
+    assert client.delete(f"/api/runs/{run_id}").status_code == 200
+    assert client.get(f"/api/runs/{run_id}").status_code == 404
+    assert db.get_prospect(pid) is None  # its prospects went with it
+    assert client.delete(f"/api/runs/{run_id}").status_code == 404  # already gone
+
+
 def test_list_runs(client):
     db.create_run("discover", "first", 1)
     db.create_run("discover", "second", 1)

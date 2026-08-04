@@ -118,6 +118,18 @@ def finish_run(run_id: int, status: str = "done", error: str | None = None) -> N
         )
 
 
+def delete_run(run_id: int) -> bool:
+    """Delete a run and every prospect it produced. Returns False if no such run.
+
+    Prospects are removed first (rather than relying on the FK's SET NULL, which
+    would orphan them as 'imported') so deleting a search really discards it.
+    """
+    with _connect() as conn:
+        conn.execute("DELETE FROM prospects WHERE run_id=?", (run_id,))
+        cur = conn.execute("DELETE FROM runs WHERE id=?", (run_id,))
+        return cur.rowcount > 0
+
+
 def get_run(run_id: int) -> dict | None:
     with _connect() as conn:
         row = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()

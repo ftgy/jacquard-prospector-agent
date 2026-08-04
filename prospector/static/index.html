@@ -159,6 +159,9 @@
   .kind-badge.imported { background: var(--surface-2); color: var(--muted); border-color: var(--hairline); }
   .group-query { font-weight: 650; letter-spacing: -.01em; font-size: 15px; }
   .group-meta { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; }
+  .group-del { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px;
+               line-height: 1; padding: 4px 7px; border-radius: 6px; }
+  .group-del:hover { color: var(--tier-d); background: color-mix(in srgb, var(--tier-d) 12%, transparent); }
   .group-prog { flex-basis: 100%; height: 6px; background: var(--surface-2); border-radius: 4px;
                 overflow: hidden; border: 1px solid var(--hairline-2); }
   .group-prog i { display: block; height: 100%; background: var(--accent); transition: width .4s ease; }
@@ -497,6 +500,12 @@ function groupCard(tab, run, prospects, isUngrouped){
   if (running){
     const pct = total ? Math.round(done / total * 100) : 12;
     head.appendChild(el("div", "group-prog", `<i style="width:${pct}%"></i>`));
+  } else if (run){
+    const del = el("button", "group-del", "🗑");
+    del.title = "Delete this search and its results";
+    del.setAttribute("aria-label", "Delete search");
+    del.onclick = e => { e.stopPropagation(); deleteRun(tab, run, prospects.length); };
+    head.appendChild(del);
   }
   card.appendChild(head);
 
@@ -518,6 +527,18 @@ function groupCard(tab, run, prospects, isUngrouped){
 
   head.querySelector(".group-toggle").onclick = e => { e.stopPropagation(); card.classList.toggle("collapsed"); };
   return card;
+}
+
+async function deleteRun(tab, run, count){
+  const what = count ? `and all ${plural(count, "result", "results")}` : "and its results";
+  if (!confirm(`Delete the search “${run.query}” ${what}? This can't be undone.`)) return;
+  clearInterval(polls[tab]);   // stop polling in case this run was still updating
+  try {
+    const res = await fetch("/api/runs/" + run.id, {method:"DELETE"});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    toast("Search deleted.");
+    loadStats(); loadGroups(tab);
+  } catch (e){ toast("Couldn't delete search: " + e.message); }
 }
 
 function prospectRow(r){
