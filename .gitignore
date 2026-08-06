@@ -12,6 +12,10 @@ prospector.db
 prospector.db-wal
 prospector.db-shm
 
+# Unattended populate driver: log + lock
+populate.log
+.populate.lock
+
 # Editor / IDE
 .idea/
 .vscode/
