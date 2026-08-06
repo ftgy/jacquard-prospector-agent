@@ -423,6 +423,11 @@ EMAIL_SCHEMA = {
 
 _LANGUAGES = {"english": "English", "spanish": "Spanish"}
 
+# Who the outreach is signed by, and the website referenced as the "proof asset"
+# (the prospect-research agent that likely found the reader is itself the portfolio).
+SENDER_NAME = "Francisco Narduzzi"
+WEBSITE = "feina.dev"
+
 
 def _email_system(icp: str, language: str) -> str:
     lang = _LANGUAGES.get(language, "English")
@@ -431,8 +436,8 @@ described in the ICP below, to a company they researched. The goal is to start a
 conversation, not to close a sale.
 
 Write the ENTIRE email — subject and body — in {lang}. Use natural, idiomatic \
-business {lang} (for Spanish, address the reader with the polite "usted"). Keep \
-"[Your name]" as-is for the sign-off.
+business {lang} (for Spanish, address the reader with the polite "usted"). Sign \
+off as {SENDER_NAME}.
 
 Rules:
 - Short: ~120-160 words. Busy people skim.
@@ -443,7 +448,9 @@ Rules:
 - One clear, low-friction ask: a brief call or a reply. No pushy urgency.
 - Human and plain-spoken. No corporate buzzwords, no "I hope this email finds you
   well", no exclamation-mark hype.
-- Plain text only. End with "[Your name]" as the sign-off — don't invent a name.
+- Plain text only. End with a sign-off line naming the sender, "{SENDER_NAME}",
+  then "{WEBSITE}" on its own line right below it, as a plain signature. That is
+  the only place the website appears; don't also mention the URL in the body.
 
 Here is the consultant's ICP (who they are and what they offer):
 {icp}"""
