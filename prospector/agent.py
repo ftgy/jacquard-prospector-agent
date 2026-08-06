@@ -482,3 +482,78 @@ def draft_outreach_email(client: anthropic.Anthropic, record: dict, icp: str,
         EMAIL_SCHEMA,
         max_tokens=2000,
     )
+
+
+# --- Stage 4: find where to send it ------------------------------------------
+
+CONTACT_SYSTEM = """You find the best public contact details for a specific \
+company so a consultant can send it a cold outreach email.
+
+- Search the company's OWN official website first — check its contact, about, or
+  legal-notice page (in Spain, "contacto" / "aviso legal"). Reputable business
+  directories are a fallback.
+- Return only a real email address you actually saw on a page. NEVER guess one or
+  build it from a pattern like info@theirdomain. If you can't find a real address,
+  say so plainly and don't provide one.
+- Prefer a general or commercial inbox (info@, contact@, contacto@, comercial@,
+  hola@) over a named person's address.
+- Also report the company's phone number and official website if you find them,
+  and the exact URL where you saw the email address."""
+
+CONTACT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "email": {
+            "type": "string",
+            "description": "The contact email address, verbatim. Empty string if "
+                           "no real address was found.",
+        },
+        "phone": {"type": "string", "description": "Phone number, or empty string."},
+        "website": {"type": "string", "description": "Official website, or empty string."},
+        "source_url": {
+            "type": "string",
+            "description": "URL where the email was found. Empty string if none.",
+        },
+    },
+    "required": ["email", "phone", "website", "source_url"],
+    "additionalProperties": False,
+}
+
+
+def _contact_context(record: dict) -> str:
+    """A few facts to pin the search to the RIGHT company (name can be ambiguous)."""
+    lines = [f"Company: {record.get('company', '')}"]
+    if record.get("one_line"):
+        lines.append(f"What they do: {record['one_line']}")
+    summary = record.get("research_summary") or ""
+    if summary:
+        lines.append("Context from earlier research:\n" + summary[:800])
+    return "\n".join(lines)
+
+
+def find_contact(client: anthropic.Anthropic, record: dict) -> dict | None:
+    """Find where to send outreach: search the web, then structure the result.
+
+    Returns {'email', 'phone', 'website', 'source_url'} with '' for anything not
+    found, or None if no real email address turned up.
+    """
+    context = _contact_context(record)
+    search = _search(
+        client,
+        CONTACT_SYSTEM,
+        "Find the direct business contact email for this company, plus its phone "
+        "and website. Use its own official site's contact/legal pages first.\n\n"
+        "=== COMPANY ===\n" + context,
+        max_tokens=3000,
+    )
+    contact = _structure(
+        client,
+        "You extract contact details from research notes into JSON. Copy the email "
+        "exactly as written in the notes; if the notes report no real email was "
+        "found, return an empty string for it. Never invent an address.",
+        "=== RESEARCH NOTES ===\n" + search["text"],
+        CONTACT_SCHEMA,
+        max_tokens=800,
+    )
+    contact = {k: (str(v).strip() if v else "") for k, v in contact.items()}
+    return contact if contact.get("email") else None

@@ -115,6 +115,25 @@ def api_draft_email(prospect_id: int, req: EmailRequest | None = None):
         raise HTTPException(502, friendly_api_error(e))
 
 
+@app.post("/api/prospects/{prospect_id}/contact")
+def api_find_contact(prospect_id: int):
+    """Search the web for where to send outreach. Synchronous.
+
+    Runs a fresh search and overwrites any stored contact — backs the on-demand
+    "Find contact" button so a failed lookup can be retried. Returns
+    {id, contact} where contact is null if no real address was found.
+    """
+    from .service import find_contact_for, friendly_api_error
+    try:
+        return {"id": prospect_id, "contact": find_contact_for(prospect_id)}
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    except SystemExit as e:  # make_client() with no API key
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, friendly_api_error(e))
+
+
 @app.get("/api/stats")
 def api_stats():
     return db.stats()

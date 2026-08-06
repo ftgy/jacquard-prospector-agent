@@ -76,6 +76,11 @@ def init_db() -> None:
                 email_body       TEXT,
                 email_at         TEXT,   -- when that email was generated
                 email_lang       TEXT,   -- language it was written in
+                contact_email    TEXT,   -- where to send it (found on email gen)
+                contact_phone    TEXT,
+                contact_website  TEXT,
+                contact_source   TEXT,   -- URL the email was found on
+                contact_at       TEXT,   -- when the contact was looked up
                 error            TEXT,
                 created_at       TEXT NOT NULL
             );
@@ -86,7 +91,9 @@ def init_db() -> None:
         )
         # Migrate DBs created before newer columns existed.
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(prospects)")}
-        for col in ("notes", "email_subject", "email_body", "email_at", "email_lang"):
+        for col in ("notes", "email_subject", "email_body", "email_at", "email_lang",
+                    "contact_email", "contact_phone", "contact_website",
+                    "contact_source", "contact_at"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT")
 
@@ -187,6 +194,19 @@ def insert_prospect(record: dict, run_id: int | None = None) -> int:
         return cur.lastrowid
 
 
+def _contact_dict(row: sqlite3.Row) -> dict | None:
+    """The stored 'where to send it' details, or None if none were found."""
+    if not row["contact_email"]:
+        return None
+    return {
+        "email": row["contact_email"],
+        "phone": row["contact_phone"],
+        "website": row["contact_website"],
+        "source": row["contact_source"],
+        "found_at": row["contact_at"],
+    }
+
+
 def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
     """Inflate a prospects row back into a record dict.
 
@@ -209,7 +229,8 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
         rec["notes"] = row["notes"]
         rec["email"] = (
             {"subject": row["email_subject"], "body": row["email_body"],
-             "generated_at": row["email_at"], "language": row["email_lang"]}
+             "generated_at": row["email_at"], "language": row["email_lang"],
+             "contact": _contact_dict(row)}
             if row["email_subject"] else None
         )
         rec["research_summary"] = row["research_summary"]
@@ -292,6 +313,21 @@ def set_prospect_email(prospect_id: int, subject: str, body: str,
             (subject, body, _now(), language, prospect_id),
         )
         return cur.rowcount > 0
+
+
+def set_prospect_contact(prospect_id: int, email: str, phone: str | None = None,
+                         website: str | None = None,
+                         source: str | None = None) -> dict:
+    """Persist the contact details found for a prospect. Returns the stored dict."""
+    ts = _now()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE prospects SET contact_email=?, contact_phone=?, "
+            "contact_website=?, contact_source=?, contact_at=? WHERE id=?",
+            (email, phone, website, source, ts, prospect_id),
+        )
+    return {"email": email, "phone": phone, "website": website,
+            "source": source, "found_at": ts}
 
 
 def grouped_results(kind: str) -> dict:

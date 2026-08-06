@@ -98,6 +98,41 @@ def test_draft_email_endpoint(client, monkeypatch):
     assert calls["language"] == "spanish"
 
 
+def test_find_contact_endpoint(client, monkeypatch):
+    from prospector import service
+    monkeypatch.setattr(service, "find_contact_for",
+                        lambda pid: {"email": "hola@acme.es", "phone": None,
+                                     "website": "acme.es", "source": None,
+                                     "found_at": "2026-08-06"})
+    pid = db.insert_prospect(make_record("Acme"))
+    r = client.post(f"/api/prospects/{pid}/contact")
+    assert r.status_code == 200
+    assert r.json() == {"id": pid, "contact": {"email": "hola@acme.es",
+        "phone": None, "website": "acme.es", "source": None, "found_at": "2026-08-06"}}
+
+
+def test_find_contact_endpoint_none(client, monkeypatch):
+    from prospector import service
+    monkeypatch.setattr(service, "find_contact_for", lambda pid: None)
+    pid = db.insert_prospect(make_record("Acme"))
+    r = client.post(f"/api/prospects/{pid}/contact")
+    assert r.status_code == 200 and r.json()["contact"] is None
+
+
+def test_find_contact_missing_prospect_404(client):
+    assert client.post("/api/prospects/9999/contact").status_code == 404
+
+
+def test_find_contact_api_failure_502(client, monkeypatch):
+    from prospector import service
+
+    def boom(pid):
+        raise Exception("search exploded")
+    monkeypatch.setattr(service, "find_contact_for", boom)
+    pid = db.insert_prospect(make_record("Acme"))
+    assert client.post(f"/api/prospects/{pid}/contact").status_code == 502
+
+
 def test_draft_email_rejects_bad_language(client):
     pid = db.insert_prospect(make_record("Acme"))
     assert client.post(f"/api/prospects/{pid}/email",

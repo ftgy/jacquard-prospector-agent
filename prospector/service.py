@@ -17,6 +17,7 @@ from . import db
 from .agent import (
     discover_candidates,
     draft_outreach_email,
+    find_contact,
     run_prospect,
     suggest_niches,
 )
@@ -131,11 +132,12 @@ def suggest_niches_for(location: str, count: int = 8,
 def draft_email_for(prospect_id: int, language: str = "english",
                     client: anthropic.Anthropic | None = None) -> dict:
     """Draft an outreach email for one stored prospect. Returns {'subject','body',
-    'language'}.
+    'language','contact'}.
 
-    Synchronous (one reasoning call over the saved research). `language` is
-    'english' or 'spanish'. Raises LookupError if the prospect is gone, ValueError
-    if it's a failed-research row with nothing to write from.
+    Synchronous. Drafts the email from the saved research, then looks up where to
+    send it (the contact search only runs once — a stored contact is reused across
+    regenerations). `language` is 'english' or 'spanish'. Raises LookupError if the
+    prospect is gone, ValueError if it's a failed-research row.
     """
     rec = db.get_prospect(prospect_id)
     if rec is None:
@@ -148,4 +150,47 @@ def draft_email_for(prospect_id: int, language: str = "english",
     db.set_prospect_email(prospect_id, email.get("subject", ""),
                           email.get("body", ""), language)
     email["language"] = language
+    email["contact"] = _resolve_contact(prospect_id, rec, client)
     return email
+
+
+def _resolve_contact(prospect_id: int, rec: dict,
+                     client: anthropic.Anthropic) -> dict | None:
+    """Where to send the email. Reuse a stored contact, else search for one.
+
+    Best-effort: a lookup failure never breaks email generation — it just means
+    we return no contact yet. Retrying is a separate, explicit action
+    (find_contact_for / the "Find contact" button).
+    """
+    existing = (rec.get("email") or {}).get("contact")
+    if existing and existing.get("email"):
+        return existing
+    try:
+        found = find_contact(client, rec)
+    except Exception:
+        return existing
+    return _persist_found(prospect_id, found) if found else existing
+
+
+def find_contact_for(prospect_id: int,
+                     client: anthropic.Anthropic | None = None) -> dict | None:
+    """Search the web for where to send outreach and store it. Returns the contact
+    dict, or None if no real address was found.
+
+    Unlike the search folded into email generation, this always runs a fresh
+    search and lets errors propagate — it backs the on-demand "Find contact"
+    button, so the caller can surface a failure and let the user retry.
+    """
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    found = find_contact(client or make_client(), rec)
+    return _persist_found(prospect_id, found) if found else None
+
+
+def _persist_found(prospect_id: int, found: dict) -> dict:
+    """Store a find_contact() result, normalizing blank fields to NULL."""
+    return db.set_prospect_contact(prospect_id, found["email"],
+                                   found.get("phone") or None,
+                                   found.get("website") or None,
+                                   found.get("source_url") or None)

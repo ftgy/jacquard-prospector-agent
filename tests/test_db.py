@@ -143,6 +143,20 @@ def test_set_email_missing_prospect():
     assert db.set_prospect_email(9999, "s", "b") is False
 
 
+def test_contact_roundtrip():
+    pid = db.insert_prospect(make_record("Mailed"))
+    db.set_prospect_email(pid, "s", "b")
+    assert db.get_prospect(pid)["email"]["contact"] is None  # none until looked up
+    stored = db.set_prospect_contact(pid, "hola@acme.es", "900 111 222",
+                                     "acme.es", "https://acme.es/contacto")
+    assert stored["email"] == "hola@acme.es" and stored["found_at"]
+    contact = db.get_prospect(pid)["email"]["contact"]
+    assert contact["email"] == "hola@acme.es"
+    assert contact["phone"] == "900 111 222"
+    assert contact["website"] == "acme.es"
+    assert contact["source"] == "https://acme.es/contacto"
+
+
 def test_email_absent_from_summary_list():
     pid = db.insert_prospect(make_record("Mailed"))
     db.set_prospect_email(pid, "s", "b")

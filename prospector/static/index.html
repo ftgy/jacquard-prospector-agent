@@ -269,6 +269,17 @@
   textarea.email-body:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
     outline-offset: 1px; border-color: var(--accent); }
   .email-actions { margin-top: 9px; display: flex; gap: 10px; }
+  .email-contact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 9px 12px;
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); border: 1px solid var(--hairline);
+    border-radius: 9px; margin-bottom: 10px; }
+  .email-contact .k { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    font-family: var(--mono); flex-shrink: 0; }
+  .email-contact .contact-to { font-weight: 600; font-family: var(--mono); color: var(--accent); text-decoration: none; }
+  .email-contact .contact-to:hover { text-decoration: underline; }
+  .email-contact .contact-meta { font-size: 12px; color: var(--muted); flex-basis: 100%; }
+  .email-contact .contact-empty { font-size: 12px; color: var(--muted); font-style: italic; }
+  .email-contact .contact-find { margin-left: auto; font-style: normal; padding: 5px 10px; font-size: 12px; }
+  .email-contact.none { background: var(--surface-2); }
 
   /* drawer footer / danger */
   .drawer .dfoot { margin-top: auto; padding: 14px 22px; border-top: 1px solid var(--hairline);
@@ -636,14 +647,14 @@ function emailSection(id, existing){
 
   const gen = el("button", "icon-btn primary", existing ? "✉ Regenerate" : "✉ Generate email");
   const out = el("div", "email-out");
-  if (existing) renderEmail(out, existing);
+  if (existing) renderEmail(id, out, existing);
   gen.onclick = async () => {
     gen.disabled = true; const was = gen.textContent; gen.textContent = "✉ Drafting…";
     try {
       const res = await fetch(`/api/prospects/${id}/email`, {method:"POST",
         headers:{"Content-Type":"application/json"}, body: JSON.stringify({ language: lang })});
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
-      renderEmail(out, await res.json());
+      renderEmail(id, out, await res.json());
       gen.textContent = "✉ Regenerate";
     } catch (e){ toast("Couldn't generate email: " + e.message); gen.textContent = was; }
     finally { gen.disabled = false; }
@@ -654,13 +665,18 @@ function emailSection(id, existing){
   return s;
 }
 
-function renderEmail(out, email){
+function renderEmail(id, out, email){
   out.innerHTML = "";
   const wrap = el("div", "email-draft");
   const bits = [];
   if (email.generated_at) bits.push("Saved draft · " + email.generated_at.slice(0, 10));
   if (email.language) bits.push(email.language.charAt(0).toUpperCase() + email.language.slice(1));
   if (bits.length) wrap.appendChild(el("div", "email-saved", esc(bits.join(" · "))));
+
+  let contact = email.contact;                    // updated in place by the search
+  const cardHost = el("div", "contact-host");
+  wrap.appendChild(cardHost);
+
   wrap.appendChild(el("div", "email-subj",
     `<span class="k">Subject</span><span class="subjtext">${esc(email.subject)}</span>`));
   const ta = el("textarea", "email-body"); ta.value = email.body;
@@ -671,9 +687,66 @@ function renderEmail(out, email){
     try { await navigator.clipboard.writeText(text); toast("Email copied to clipboard."); }
     catch { toast("Couldn't copy — select the text and copy manually."); }
   };
-  actions.appendChild(copy);
+  const send = el("button", "icon-btn primary", "✉ Open in email app");
+  send.onclick = () => {
+    if (!(contact && contact.email)){ toast("No contact address yet — use “Find contact”."); return; }
+    const q = `subject=${encodeURIComponent(email.subject||"")}&body=${encodeURIComponent(ta.value)}`;
+    window.location.href = `mailto:${encodeURIComponent(contact.email)}?${q}`;
+  };
+  actions.append(copy, send);
+
+  function drawContact(){
+    cardHost.innerHTML = "";
+    cardHost.appendChild(contactCard(id, contact, c => { contact = c; drawContact(); }));
+    send.disabled = !(contact && contact.email);
+  }
+  drawContact();
+
   wrap.append(ta, actions);
   out.appendChild(wrap);
+}
+
+// A contact "Send to" card. `onFound` is called with the new contact (or null)
+// after an on-demand search, so the caller can re-render in place.
+function contactCard(id, contact, onFound){
+  const found = contact && contact.email;
+  const c = el("div", "email-contact" + (found ? "" : " none"));
+
+  if (found){
+    const addr = el("a", "contact-to", esc(contact.email));
+    addr.href = "mailto:" + encodeURIComponent(contact.email);
+    c.append(el("span", "k", "Send to"), addr);
+  } else {
+    c.appendChild(el("span", "contact-empty", "No contact address found."));
+  }
+
+  const btn = el("button", "icon-btn contact-find", found ? "↻ Re-search" : "🔍 Find contact");
+  btn.onclick = async () => {
+    btn.disabled = true; const was = btn.textContent; btn.textContent = "Searching…";
+    try {
+      const res = await fetch(`/api/prospects/${id}/contact`, {method:"POST"});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      const data = await res.json();
+      toast(data.contact && data.contact.email
+        ? "Found: " + data.contact.email
+        : "No address found — try the company's website.");
+      onFound(data.contact || null);
+    } catch (e){ toast("Contact search failed: " + e.message); btn.disabled = false; btn.textContent = was; }
+  };
+  c.appendChild(btn);
+
+  if (found){
+    const meta = [];
+    if (contact.phone) meta.push(esc(contact.phone));
+    if (contact.website){
+      let w = contact.website; if (!/^https?:/i.test(w)) w = "https://" + w;
+      meta.push(`<a href="${esc(w)}" target="_blank" rel="noopener">${esc(contact.website)}</a>`);
+    }
+    if (contact.source)
+      meta.push(`<a href="${esc(contact.source)}" target="_blank" rel="noopener">source</a>`);
+    if (meta.length) c.appendChild(el("span", "contact-meta", meta.join(" · ")));
+  }
+  return c;
 }
 
 function notesSection(id, notes){

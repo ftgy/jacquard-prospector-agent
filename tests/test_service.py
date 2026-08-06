@@ -149,10 +149,11 @@ def test_draft_email_for_uses_stored_record(monkeypatch):
         return {"subject": "s", "body": "b"}
 
     monkeypatch.setattr(service, "draft_outreach_email", fake_draft)
+    monkeypatch.setattr(service, "find_contact", lambda client, rec: None)
     pid = db.insert_prospect(make_record("Acme"))
     out = service.draft_email_for(pid, language="spanish", client=FakeClient())
 
-    assert out == {"subject": "s", "body": "b", "language": "spanish"}
+    assert out == {"subject": "s", "body": "b", "language": "spanish", "contact": None}
     assert captured["company"] == "Acme"
     assert captured["icp"] is service.ICP
     assert captured["language"] == "spanish"
@@ -160,6 +161,70 @@ def test_draft_email_for_uses_stored_record(monkeypatch):
     stored = db.get_prospect(pid)["email"]
     assert stored["subject"] == "s"
     assert stored["language"] == "spanish"
+
+
+def test_draft_email_for_finds_and_persists_contact(monkeypatch):
+    monkeypatch.setattr(service, "draft_outreach_email",
+                        lambda client, rec, icp, lang: {"subject": "s", "body": "b"})
+    monkeypatch.setattr(service, "find_contact", lambda client, rec: {
+        "email": "hola@acme.es", "phone": "900 111 222",
+        "website": "acme.es", "source_url": "https://acme.es/contacto"})
+    pid = db.insert_prospect(make_record("Acme"))
+
+    out = service.draft_email_for(pid, client=FakeClient())
+    assert out["contact"]["email"] == "hola@acme.es"
+    # persisted, and reused (no second search) on regenerate
+    stored = db.get_prospect(pid)["email"]["contact"]
+    assert stored["email"] == "hola@acme.es"
+    assert stored["phone"] == "900 111 222"
+
+    def boom(client, rec):
+        raise AssertionError("should reuse stored contact, not search again")
+
+    monkeypatch.setattr(service, "find_contact", boom)
+    again = service.draft_email_for(pid, client=FakeClient())
+    assert again["contact"]["email"] == "hola@acme.es"
+
+
+def test_draft_email_for_survives_contact_lookup_failure(monkeypatch):
+    monkeypatch.setattr(service, "draft_outreach_email",
+                        lambda client, rec, icp, lang: {"subject": "s", "body": "b"})
+
+    def boom(client, rec):
+        raise RuntimeError("search API down")
+
+    monkeypatch.setattr(service, "find_contact", boom)
+    pid = db.insert_prospect(make_record("Acme"))
+
+    out = service.draft_email_for(pid, client=FakeClient())
+    assert out["subject"] == "s"        # email still returned
+    assert out["contact"] is None       # just no contact yet
+
+
+def test_find_contact_for_persists_result(monkeypatch):
+    monkeypatch.setattr(service, "find_contact", lambda client, rec: {
+        "email": "hola@acme.es", "phone": "", "website": "acme.es",
+        "source_url": "https://acme.es/contacto"})
+    pid = db.insert_prospect(make_record("Acme"))
+
+    contact = service.find_contact_for(pid, client=FakeClient())
+    assert contact["email"] == "hola@acme.es"
+    assert contact["phone"] is None            # blank normalized to NULL
+    assert contact["website"] == "acme.es"
+    # readable straight off the prospect (even before any email is drafted)
+    db.set_prospect_email(pid, "s", "b")
+    assert db.get_prospect(pid)["email"]["contact"]["email"] == "hola@acme.es"
+
+
+def test_find_contact_for_none_when_nothing_found(monkeypatch):
+    monkeypatch.setattr(service, "find_contact", lambda client, rec: None)
+    pid = db.insert_prospect(make_record("Acme"))
+    assert service.find_contact_for(pid, client=FakeClient()) is None
+
+
+def test_find_contact_for_missing_prospect_raises():
+    with pytest.raises(LookupError):
+        service.find_contact_for(9999, client=FakeClient())
 
 
 def test_draft_email_for_missing_prospect_raises():
