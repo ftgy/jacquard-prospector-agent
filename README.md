@@ -125,6 +125,44 @@ Vertex AI, where a GCP org policy
 Anthropic *partner* models. Gemini is *first-party* on Vertex, so that policy
 doesn't apply and its grounding works. `check_setup.py` verifies which you have.
 
+## Output language
+
+Research output (discovery notes, research summaries, and qualification verdicts)
+and the outreach emails are written in the language set by **`OUTPUT_LANGUAGE`** —
+one switch in `prospector/config.py`, overridable per-environment in `.env`:
+
+```bash
+OUTPUT_LANGUAGE=spanish   # or: english
+```
+
+Flip it and the whole pipeline changes language. English is the model's default
+(no extra prompt); Spanish uses idiomatic business phrasing and addresses the
+reader as *usted*. Company names, URLs, and other proper nouns are kept verbatim.
+**This repo ships set to `spanish`.** The outreach email follows the same default,
+but the dashboard's per-email language toggle still overrides it for a given email.
+
+Only *new* runs are affected — prospects already stored keep the language they
+were generated in.
+
+## Avoiding duplicate work
+
+Runs never re-research a company you already have. Before spending on research,
+each run drops candidates that match an existing prospect by **company name or
+website domain** (case- and URL-insensitive), plus repeats within the same batch.
+A company whose research previously *failed* stays eligible, so a transient error
+can be retried rather than skipped forever.
+
+Because of that dedup, a repeated discovery on the same niche would otherwise
+return nothing new. Discovery instead **keeps trying**: it re-asks the model with
+a growing "we already have these — find different ones" list until it collects the
+number of fresh companies you asked for, or the niche is genuinely exhausted — so
+re-running a search surfaces *new* prospects instead of an empty result. The knobs
+(`MAX_DISCOVERY_ATTEMPTS`, `DISCOVERY_OVERSHOOT`, `MAX_EXCLUDE_HINTS`) sit at the
+top of `prospector/service.py`.
+
+The unattended `scripts/populate.py` cron driver uses the same dedup, so it only
+ever researches companies new to the database.
+
 ## Tune your targeting
 
 Edit **`prospector/icp.py`** — that one file describes who you are and what a
@@ -210,6 +248,10 @@ this task.
 ## Ideas to extend
 
 - **CRM push**: write tier-A results to a Google Sheet, Airtable, or HubSpot.
-- **Draft outreach**: add a stage that turns the outreach angle into a full email.
-- **Dedup / caching**: skip companies already in `results.json`.
+- **Alerting**: notify (email/Slack) when an unattended `populate.py` run lands a
+  tier-A prospect.
+- **More languages**: `OUTPUT_LANGUAGE` currently knows English and Spanish — the
+  map in `prospector/config.py` is the only thing to extend.
+
+*(Outreach drafting, contact-finding, and dedup are already built in — see above.)*
 ```
