@@ -65,11 +65,47 @@ def run_batch(client: anthropic.Anthropic, prospects: list[dict], icp: str = ICP
             record = run_prospect(client, company, icp, p.get("hint", ""))
         except Exception as e:  # one bad company shouldn't kill the batch
             record = {"company": company, "error": friendly_api_error(e)}
+        if p.get("website"):  # keep the discovered domain for future dedup
+            record.setdefault("website", p["website"])
         db.insert_prospect(record, run_id=run_id)
         if run_id is not None:
             db.bump_run_progress(run_id)
         results.append(record)
     return results
+
+
+MAX_DISCOVERY_ATTEMPTS = 4     # times to re-ask discovery for fresh names
+DISCOVERY_OVERSHOOT = 5        # ask for a few extra so filtering still leaves enough
+MAX_EXCLUDE_HINTS = 60         # cap on the 'already have' list sent to the model
+
+
+def _discover_unresearched(client: anthropic.Anthropic, niche: str,
+                           count: int) -> list[dict]:
+    """Discover up to `count` companies we haven't researched yet.
+
+    A single discovery pass tends to re-find companies already in the DB, so a
+    repeated search on the same niche can yield nothing new. This retries
+    discovery, each pass telling the model which names to avoid (the ones we
+    already have plus those found so far), until it has `count` fresh companies or
+    stops making progress. Returns candidate dicts — possibly fewer than `count`,
+    or empty if the niche is genuinely exhausted.
+    """
+    avoid = db.researched_company_names(limit=MAX_EXCLUDE_HINTS)
+    fresh: list[dict] = []
+    for _ in range(MAX_DISCOVERY_ATTEMPTS):
+        need = count - len(fresh)
+        if need <= 0:
+            break
+        exclude = avoid + [c["company"] for c in fresh]
+        batch = discover_candidates(client, niche, ICP, need + DISCOVERY_OVERSHOOT,
+                                    exclude=exclude)
+        if not batch:
+            break  # the model genuinely found nothing — stop hitting the API
+        # A pass that only re-finds known companies isn't a dead end: the growing
+        # exclusion list steers the next pass elsewhere, so keep going until we hit
+        # the target or run out of attempts.
+        fresh = db.filter_unresearched(fresh + batch)  # drop known + dups, keep order
+    return fresh[:count]
 
 
 def _execute_run(client: anthropic.Anthropic, run_id: int, kind: str,
@@ -78,13 +114,15 @@ def _execute_run(client: anthropic.Anthropic, run_id: int, kind: str,
     marks the run done/error at the end."""
     try:
         if kind == "discover":
-            candidates = discover_candidates(client, query, ICP, count)
+            candidates = _discover_unresearched(client, query, count)
             if not candidates:
                 db.finish_run(run_id, "error",
-                              "Discovery found no companies. Try a broader niche.")
+                              "No new companies found for this niche — you may have "
+                              "already researched the ones out there. Try a "
+                              "different or broader niche.")
                 return
-            prospects = [{"company": c["company"], "hint": c.get("hint", "")}
-                         for c in candidates]
+            prospects = [{"company": c["company"], "hint": c.get("hint", ""),
+                          "website": c.get("website", "")} for c in candidates]
         else:  # 'companies' — query is a comma/newline separated list of names
             names = [n.strip() for n in query.replace("\n", ",").split(",")
                      if n.strip()]
@@ -92,6 +130,13 @@ def _execute_run(client: anthropic.Anthropic, run_id: int, kind: str,
 
         if not prospects:
             db.finish_run(run_id, "error", "No companies to process.")
+            return
+
+        # Skip companies already in the DB (by name or domain) so a re-run never
+        # re-researches them.
+        prospects = db.filter_unresearched(prospects)
+        if not prospects:
+            db.finish_run(run_id, "done")  # everything was already researched
             return
 
         db.set_run_total(run_id, len(prospects))

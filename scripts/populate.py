@@ -72,12 +72,6 @@ def acquire_lock(lock_path: Path):
     return fh
 
 
-def existing_companies() -> set:
-    """Lowercased names already in the DB, for dedup."""
-    return {(p.get("company") or "").strip().lower()
-            for p in db.list_prospects()}
-
-
 def researched_niches() -> set:
     """Niche queries already run (discover runs), so we don't repeat them."""
     return {(r.get("query") or "").strip().lower()
@@ -120,6 +114,8 @@ def research_batch(client, run_id: int, candidates: list) -> dict:
             consecutive += 1
             counts["error"] += 1
             log.warning("  ✗ %s — %s", company, str(e).splitlines()[0][:120])
+        if cand.get("website"):  # keep the discovered domain for future dedup
+            rec.setdefault("website", cand["website"])
         db.insert_prospect(rec, run_id=run_id)
         db.bump_run_progress(run_id)
         if consecutive >= MAX_CONSECUTIVE_ERRORS:
@@ -161,14 +157,8 @@ def run_once(location: str, count: int, forced_niche: str | None,
         log.info("Discovery found no companies for this niche; skipping.")
         return 0
 
-    # 3. Drop companies already in the DB (and dups within the batch).
-    known = existing_companies()
-    seen, new = set(), []
-    for c in candidates:
-        key = c["company"].strip().lower()
-        if key and key not in known and key not in seen:
-            seen.add(key)
-            new.append(c)
+    # 3. Drop companies already in the DB by name or domain (and dups in the batch).
+    new = db.filter_unresearched(candidates)
     log.info("Discovered %d, %d new after dedup.", len(candidates), len(new))
     if not new:
         log.info("Nothing new to research; skipping.")

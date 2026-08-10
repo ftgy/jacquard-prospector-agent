@@ -18,6 +18,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # Keep the store at the project root (one level up from this package), so it sits
 # beside .env / results.json regardless of where the package lives.
@@ -61,6 +62,7 @@ def init_db() -> None:
                 id               INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id           INTEGER REFERENCES runs(id) ON DELETE SET NULL,
                 company          TEXT NOT NULL,
+                domain           TEXT,   -- normalized website domain, for dedup
                 fit_score        INTEGER,
                 tier             TEXT,
                 confidence       TEXT,
@@ -91,8 +93,8 @@ def init_db() -> None:
         )
         # Migrate DBs created before newer columns existed.
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(prospects)")}
-        for col in ("notes", "email_subject", "email_body", "email_at", "email_lang",
-                    "contact_email", "contact_phone", "contact_website",
+        for col in ("domain", "notes", "email_subject", "email_body", "email_at",
+                    "email_lang", "contact_email", "contact_phone", "contact_website",
                     "contact_source", "contact_at"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT")
@@ -169,14 +171,15 @@ def insert_prospect(record: dict, run_id: int | None = None) -> int:
         cur = conn.execute(
             """
             INSERT INTO prospects (
-                run_id, company, fit_score, tier, confidence, one_line,
+                run_id, company, domain, fit_score, tier, confidence, one_line,
                 outreach_angle, research_summary, pain_points, buying_signals,
                 red_flags, sources, error, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
                 record.get("company", ""),
+                normalize_domain(record.get("website")) or None,
                 record.get("fit_score"),
                 record.get("tier"),
                 record.get("confidence"),
@@ -192,6 +195,110 @@ def insert_prospect(record: dict, run_id: int | None = None) -> int:
             ),
         )
         return cur.lastrowid
+
+
+def normalize_company(name: str | None) -> str:
+    """Canonical key for matching a company by name (case/whitespace-insensitive).
+
+    One source of truth for when two company names count as 'the same' while
+    deciding whether we've already researched one.
+    """
+    return (name or "").strip().lower()
+
+
+def normalize_domain(url: str | None) -> str:
+    """Canonical key for matching a company by website.
+
+    Strips scheme, userinfo, port, path and a leading 'www.', lowercasing the
+    rest: 'https://www.Acme.com/contact' -> 'acme.com'. Empty string if there's
+    nothing usable. Not a full public-suffix parse — just enough to spot the same
+    site under two URLs.
+    """
+    s = (url or "").strip().lower()
+    if not s:
+        return ""
+    if "//" not in s:            # bare host/path -> give urlsplit a netloc to find
+        s = "//" + s
+    host = urlsplit(s).netloc.split("@")[-1].split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def known_keys() -> tuple[set[str], set[str]]:
+    """(company names, website domains) already SUCCESSFULLY researched, for dedup.
+
+    Backs 'skip companies we already know' for both interactive runs (service) and
+    the unattended populate script. Domains come from a prospect's discovered site
+    (the `domain` column) and from any official site found during contact lookup
+    (`contact_website`). Error rows are excluded on purpose, so a company whose
+    research previously failed — usually a transient endpoint hiccup — can be tried
+    again instead of being skipped forever.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT company, domain, contact_website FROM prospects "
+            "WHERE error IS NULL"
+        ).fetchall()
+    names: set[str] = set()
+    domains: set[str] = set()
+    for r in rows:
+        name = normalize_company(r["company"])
+        if name:
+            names.add(name)
+        for d in (r["domain"], r["contact_website"]):
+            dom = normalize_domain(d)
+            if dom:
+                domains.add(dom)
+    return names, domains
+
+
+def researched_company_names(limit: int = 200) -> list[str]:
+    """Original-case names of successfully researched companies, newest first.
+
+    Feeds discovery's 'don't return these' hint so a repeated search is steered
+    toward different companies. Authoritative dedup still happens in
+    filter_unresearched — this is only a prompt nudge, hence the cap.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT company FROM prospects "
+            "WHERE error IS NULL AND company <> '' "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [r["company"] for r in rows]
+
+
+def filter_unresearched(items: list[dict], *, company_key: str = "company",
+                        website_key: str = "website") -> list[dict]:
+    """Drop items already researched — by company name OR website domain — and
+    de-duplicate within the list itself. Input order is preserved.
+
+    Matching either key skips the item, so the same company found under a slightly
+    different name (but the same site), or the same name reached via a different
+    URL, is only researched once. Items with neither a name nor a domain are
+    dropped as unidentifiable.
+    """
+    names, domains = known_keys()
+    seen_names: set[str] = set()
+    seen_domains: set[str] = set()
+    kept: list[dict] = []
+    for it in items:
+        name = normalize_company(it.get(company_key))
+        dom = normalize_domain(it.get(website_key))
+        if not name and not dom:
+            continue
+        if name and (name in names or name in seen_names):
+            continue
+        if dom and (dom in domains or dom in seen_domains):
+            continue
+        if name:
+            seen_names.add(name)
+        if dom:
+            seen_domains.add(dom)
+        kept.append(it)
+    return kept
 
 
 def _contact_dict(row: sqlite3.Row) -> dict | None:

@@ -275,3 +275,34 @@ def test_grouped_results_excludes_other_kinds():
     assert [g["run"]["query"] for g in disc["groups"]] == ["a niche"]
     comp = db.grouped_results("companies")
     assert [g["run"]["query"] for g in comp["groups"]] == ["Acme"]
+
+
+def test_normalize_domain_variants():
+    assert db.normalize_domain("https://www.Acme.com/contact") == "acme.com"
+    assert db.normalize_domain("acme.com") == "acme.com"
+    assert db.normalize_domain("www.acme.com") == "acme.com"
+    assert db.normalize_domain("http://acme.com:8080/x?y=1") == "acme.com"
+    assert db.normalize_domain("  ") == ""
+    assert db.normalize_domain(None) == ""
+
+
+def test_known_keys_reports_names_and_domains_excluding_errors():
+    db.insert_prospect(make_record("Acme", website="https://acme.com"))
+    db.insert_prospect({"company": "FailCo", "website": "failco.com",
+                        "error": "boom"})  # error rows don't count as known
+    names, domains = db.known_keys()
+    assert "acme" in names and "acme.com" in domains
+    assert "failco" not in names and "failco.com" not in domains
+
+
+def test_filter_unresearched_matches_name_or_domain_and_dedups_batch():
+    db.insert_prospect(make_record("Acme", website="https://acme.com"))
+    incoming = [
+        {"company": "Acme Corp", "website": "acme.com/about"},  # known domain
+        {"company": "acme", "website": "other.com"},            # known name
+        {"company": "Globex", "website": "globex.io"},          # new
+        {"company": "Globex Ltd", "website": "globex.io"},      # dup domain in batch
+        {"company": "Globex", "website": "elsewhere.com"},      # dup name in batch
+    ]
+    kept = db.filter_unresearched(incoming)
+    assert [k["company"] for k in kept] == ["Globex"]

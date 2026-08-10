@@ -179,21 +179,26 @@ DISCOVERY_SCHEMA = {
 
 
 def discover_candidates(client: anthropic.Anthropic, niche: str, icp: str,
-                        count: int = 10) -> list:
+                        count: int = 10, exclude: list[str] | None = None) -> list:
     """Find real companies matching a niche + ICP. Returns candidate dicts.
 
     Does NOT qualify them — that's run_prospect()'s job. This is a cheap wide net;
-    qualification is the expensive deep pass.
+    qualification is the expensive deep pass. Pass `exclude` (company names we
+    already have) to steer the search toward DIFFERENT companies — this is what
+    lets a repeated search surface fresh results instead of the same names.
     """
-    search = _search(
-        client,
-        DISCOVERY_SYSTEM + _output_language_note(),
+    ask = (
         f"Find about {count} real companies matching this niche: {niche}.\n\n"
         f"They should plausibly fit this ideal customer profile:\n{icp}\n\n"
         "Search the web. For each company list its name, website, what it does, "
-        "and why it might fit. Only companies you actually found.",
-        max_tokens=6000,
+        "and why it might fit. Only companies you actually found."
     )
+    if exclude:
+        ask += ("\n\nWe ALREADY have the companies below — do not return any of "
+                "them. Find DIFFERENT ones:\n"
+                + "\n".join(f"- {name}" for name in exclude))
+    search = _search(client, DISCOVERY_SYSTEM + _output_language_note(), ask,
+                     max_tokens=6000)
     search_text = search["text"]
 
     result = _structure(

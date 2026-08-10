@@ -89,9 +89,76 @@ def test_execute_run_companies_marks_done(monkeypatch):
     assert {r["company"] for r in db.list_prospects()} == {"Acme", "Globex"}
 
 
+def test_execute_run_skips_already_researched(monkeypatch):
+    # Acme is already in the DB; a new run that includes it must not re-research it.
+    db.insert_prospect(make_record("Acme"))
+    researched = []
+    monkeypatch.setattr(service, "run_prospect",
+                        lambda client, company, icp, hint: researched.append(company)
+                        or make_record(company))
+    run_id = db.create_run("companies", "Acme, Globex", 2)
+    service._execute_run(FakeClient(), run_id, "companies", "Acme, Globex", 2)
+
+    run = db.get_run(run_id)
+    assert run["status"] == "done"
+    assert researched == ["Globex"]          # Acme was skipped, only Globex researched
+    assert run["total"] == 1 and run["completed"] == 1
+    # No duplicate Acme row was written.
+    assert [r["company"] for r in db.list_prospects()].count("Acme") == 1
+
+
+def test_execute_run_skips_case_and_whitespace_insensitively(monkeypatch):
+    db.insert_prospect(make_record("Acme"))
+    researched = []
+    monkeypatch.setattr(service, "run_prospect",
+                        lambda client, company, icp, hint: researched.append(company)
+                        or make_record(company))
+    run_id = db.create_run("companies", "  acme  ", 1)
+    service._execute_run(FakeClient(), run_id, "companies", "  acme  ", 1)
+
+    # All requested companies were already known -> done, nothing researched.
+    assert db.get_run(run_id)["status"] == "done"
+    assert researched == []
+
+
+def test_execute_run_discover_skips_known_domain_under_new_name(monkeypatch):
+    # A prospect already stored with acme.com; discovery re-finds the same site
+    # under a different display name. It must be skipped on the domain match.
+    db.insert_prospect(make_record("Acme", website="https://www.acme.com"))
+    monkeypatch.setattr(service, "discover_candidates",
+                        lambda client, niche, icp, count, exclude=None: [
+                            {"company": "Acme Corporation", "hint": "h",
+                             "website": "acme.com/about"},
+                            {"company": "Globex", "hint": "h", "website": "globex.io"}])
+    researched = []
+    monkeypatch.setattr(service, "run_prospect",
+                        lambda client, company, icp, hint: researched.append(company)
+                        or make_record(company))
+    run_id = db.create_run("discover", "widgets", 2)
+    service._execute_run(FakeClient(), run_id, "discover", "widgets", 2)
+
+    assert researched == ["Globex"]                 # Acme skipped by domain
+    # Globex's discovered domain was persisted, so a later run skips it by domain
+    # even under a different name.
+    assert db.filter_unresearched([{"company": "Globex Inc", "website": "globex.io"}]) == []
+
+
+def test_execute_run_retries_previously_errored_company(monkeypatch):
+    # An error row is NOT a successful research, so the company stays eligible.
+    db.insert_prospect({"company": "Acme", "error": "boom"})
+    researched = []
+    monkeypatch.setattr(service, "run_prospect",
+                        lambda client, company, icp, hint: researched.append(company)
+                        or make_record(company))
+    run_id = db.create_run("companies", "Acme", 1)
+    service._execute_run(FakeClient(), run_id, "companies", "Acme", 1)
+
+    assert researched == ["Acme"]
+
+
 def test_execute_run_discover_uses_candidates(monkeypatch):
     monkeypatch.setattr(service, "discover_candidates",
-                        lambda client, niche, icp, count: [
+                        lambda client, niche, icp, count, exclude=None: [
                             {"company": "Found One", "hint": "h1"},
                             {"company": "Found Two", "hint": "h2"}])
     monkeypatch.setattr(service, "run_prospect",
@@ -105,17 +172,43 @@ def test_execute_run_discover_uses_candidates(monkeypatch):
 
 def test_execute_run_discover_empty_is_error(monkeypatch):
     monkeypatch.setattr(service, "discover_candidates",
-                        lambda client, niche, icp, count: [])
+                        lambda client, niche, icp, count, exclude=None: [])
     run_id = db.create_run("discover", "nothing here", 5)
     service._execute_run(FakeClient(), run_id, "discover", "nothing here", 5)
 
     run = db.get_run(run_id)
     assert run["status"] == "error"
-    assert "no companies" in run["error"].lower()
+    assert "no new companies" in run["error"].lower()
+
+
+def test_discover_unresearched_retries_until_enough_fresh(monkeypatch):
+    # First pass returns companies we already have; later passes must surface new
+    # ones, and each pass should be told what to avoid.
+    db.insert_prospect(make_record("Acme", website="https://acme.com"))
+    batches = [
+        [{"company": "Acme", "hint": "", "website": "acme.com"}],        # all known
+        [{"company": "Globex", "hint": "", "website": "globex.io"},
+         {"company": "Acme", "hint": "", "website": "acme.com"}],        # 1 new
+        [{"company": "Initech", "hint": "", "website": "initech.com"}],  # 1 new
+    ]
+    seen_excludes = []
+
+    def fake_discover(client, niche, icp, count, exclude=None):
+        seen_excludes.append(list(exclude or []))
+        return batches.pop(0) if batches else []
+
+    monkeypatch.setattr(service, "discover_candidates", fake_discover)
+    fresh = service._discover_unresearched(FakeClient(), "widgets", 2)
+
+    assert [c["company"] for c in fresh] == ["Globex", "Initech"]
+    # Acme (already researched) is in the very first avoid list.
+    assert any("Acme" in ex for ex in seen_excludes)
+    # Once Globex is collected, the next pass is told to avoid it too.
+    assert "Globex" in seen_excludes[-1]
 
 
 def test_execute_run_catches_discovery_exception(monkeypatch):
-    def boom(client, niche, icp, count):
+    def boom(client, niche, icp, count, exclude=None):
         raise Exception("discovery exploded")
     monkeypatch.setattr(service, "discover_candidates", boom)
     run_id = db.create_run("discover", "agencies", 3)
