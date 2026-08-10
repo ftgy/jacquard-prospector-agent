@@ -62,7 +62,8 @@ class NotesRequest(BaseModel):
 
 
 class EmailRequest(BaseModel):
-    language: str = Field("english", pattern="^(english|spanish)$")
+    # Omitted / null -> follow the global config.OUTPUT_LANGUAGE.
+    language: str | None = Field(None, pattern="^(english|spanish)$")
 
 
 # --- prospects ---------------------------------------------------------------
@@ -99,7 +100,8 @@ def api_set_notes(prospect_id: int, req: NotesRequest):
 def api_draft_email(prospect_id: int, req: EmailRequest | None = None):
     """Draft a cold outreach email from a prospect's research. Synchronous.
 
-    Optional body {language: english|spanish}; defaults to english.
+    Optional body {language: english|spanish}; omitted follows the global
+    config.OUTPUT_LANGUAGE.
     """
     from .service import draft_email_for, friendly_api_error
     language = (req or EmailRequest()).language

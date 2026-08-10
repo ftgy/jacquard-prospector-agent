@@ -21,6 +21,14 @@ ROOT = Path(__file__).resolve().parent.parent
 # config declares them, so the model is configurable rather than hard-coded.
 DEFAULT_MODEL = "claude-opus-4-8"
 
+# Language the agent writes its research output in (discovery notes, research
+# summaries, and qualification verdicts). Flip this one variable to make the whole
+# pipeline produce Spanish. Override per-environment with OUTPUT_LANGUAGE in .env.
+# Known values are the keys of OUTPUT_LANGUAGES below.
+OUTPUT_LANGUAGE = "spanish"
+
+OUTPUT_LANGUAGES = {"english": "English", "spanish": "Spanish"}
+
 
 def load_env():
     """Minimal .env loader so you don't need python-dotenv."""
@@ -53,6 +61,21 @@ def use_system_ca_bundle():
 
 def get_model() -> str:
     return os.environ.get("PROSPECT_MODEL", DEFAULT_MODEL)
+
+
+def get_output_language() -> str:
+    """The key ('english'/'spanish') of the language research output is written in.
+
+    Reads OUTPUT_LANGUAGE from the environment, else the module default. Unknown
+    values fall back to English so a typo never breaks a run.
+    """
+    lang = os.environ.get("OUTPUT_LANGUAGE", OUTPUT_LANGUAGE).strip().lower()
+    return lang if lang in OUTPUT_LANGUAGES else "english"
+
+
+def output_language_name() -> str:
+    """Human-readable name of the output language, e.g. 'Spanish'."""
+    return OUTPUT_LANGUAGES[get_output_language()]
 
 
 def get_base_url() -> str | None:

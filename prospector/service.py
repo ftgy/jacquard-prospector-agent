@@ -21,7 +21,7 @@ from .agent import (
     run_prospect,
     suggest_niches,
 )
-from .config import make_client, using_proxy
+from .config import get_output_language, make_client, using_proxy
 from .icp import ICP
 
 
@@ -129,15 +129,16 @@ def suggest_niches_for(location: str, count: int = 8,
     return suggest_niches(client, location, ICP, count)
 
 
-def draft_email_for(prospect_id: int, language: str = "english",
+def draft_email_for(prospect_id: int, language: str | None = None,
                     client: anthropic.Anthropic | None = None) -> dict:
     """Draft an outreach email for one stored prospect. Returns {'subject','body',
     'language','contact'}.
 
     Synchronous. Drafts the email from the saved research, then looks up where to
     send it (the contact search only runs once — a stored contact is reused across
-    regenerations). `language` is 'english' or 'spanish'. Raises LookupError if the
-    prospect is gone, ValueError if it's a failed-research row.
+    regenerations). `language` is 'english' or 'spanish'; None follows the global
+    config.OUTPUT_LANGUAGE. Raises LookupError if the prospect is gone, ValueError
+    if it's a failed-research row.
     """
     rec = db.get_prospect(prospect_id)
     if rec is None:
@@ -145,6 +146,7 @@ def draft_email_for(prospect_id: int, language: str = "english",
     if rec.get("error"):
         raise ValueError("This entry is a failed research record — there's nothing "
                          "to write an email from.")
+    language = language or get_output_language()
     client = client or make_client()
     email = draft_outreach_email(client, rec, ICP, language)
     db.set_prospect_email(prospect_id, email.get("subject", ""),

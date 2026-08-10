@@ -18,8 +18,27 @@ import re
 
 import anthropic
 
-from .config import get_model, get_web_search_tool, use_native_structured_output
+from .config import (
+    get_model,
+    get_output_language,
+    get_web_search_tool,
+    output_language_name,
+    use_native_structured_output,
+)
 from .search import get_search_backend, grounded_search
+
+
+def _output_language_note() -> str:
+    """Instruction appended to research/qualify/discovery prompts to set the
+    language of the generated output. Empty for English (the model's default), so
+    English runs are byte-for-byte unchanged; set via config.OUTPUT_LANGUAGE."""
+    lang = output_language_name()
+    if lang == "English":
+        return ""
+    return (f"\n\nIMPORTANT: Write ALL of your output — every summary, verdict, "
+            f"pain point, buying signal, and outreach angle — in {lang}, using "
+            f"natural, idiomatic business {lang}. Keep company names, URLs, and "
+            f"other proper nouns exactly as they appear; translate everything else.")
 
 
 def _web_search_tool() -> dict:
@@ -168,7 +187,7 @@ def discover_candidates(client: anthropic.Anthropic, niche: str, icp: str,
     """
     search = _search(
         client,
-        DISCOVERY_SYSTEM,
+        DISCOVERY_SYSTEM + _output_language_note(),
         f"Find about {count} real companies matching this niche: {niche}.\n\n"
         f"They should plausibly fit this ideal customer profile:\n{icp}\n\n"
         "Search the web. For each company list its name, website, what it does, "
@@ -181,7 +200,7 @@ def discover_candidates(client: anthropic.Anthropic, niche: str, icp: str,
         client,
         "You extract structured company lists from research notes. Include only "
         "companies explicitly named in the notes with a real website. Never invent "
-        "or pad entries.",
+        "or pad entries." + _output_language_note(),
         f"Extract up to {count} companies from these research notes.\n\n"
         f"=== NOTES ===\n{search_text}",
         DISCOVERY_SCHEMA,
@@ -269,7 +288,7 @@ def suggest_niches(client: anthropic.Anthropic, location: str, icp: str,
     """
     result = _structure(
         client,
-        _niche_system(icp),
+        _niche_system(icp) + _output_language_note(),
         f"Suggest about {count} B2B niches worth prospecting in: {location}.\n"
         "Each niche must be concrete, searchable, and include the location.",
         NICHE_SCHEMA,
@@ -299,7 +318,7 @@ def research_company(client: anthropic.Anthropic, company: str, hint: str = "") 
     if hint:
         ask += f" Extra context: {hint}."
     ask += " Search the web and summarize what you find."
-    return _search(client, RESEARCH_SYSTEM, ask)
+    return _search(client, RESEARCH_SYSTEM + _output_language_note(), ask)
 
 
 def _extract_sources(resp) -> list:
@@ -384,7 +403,7 @@ def qualify_company(client: anthropic.Anthropic, company: str, research_text: st
     """Score researched company against the ICP. Returns the parsed JSON verdict."""
     return _structure(
         client,
-        _qualify_system(icp),
+        _qualify_system(icp) + _output_language_note(),
         f"Company: {company}\n\n=== RESEARCH ===\n{research_text}\n\n"
         "Qualify this prospect against the ICP.",
         QUALIFY_SCHEMA,
@@ -474,16 +493,16 @@ def _email_context(record: dict) -> str:
 
 
 def draft_outreach_email(client: anthropic.Anthropic, record: dict, icp: str,
-                         language: str = "english") -> dict:
+                         language: str | None = None) -> dict:
     """Draft a cold outreach email from a qualified prospect record.
 
     A single reasoning pass over research we already have (no web search), like
-    niche suggestion. `language` is 'english' or 'spanish'. Returns
-    {'subject', 'body'}.
+    niche suggestion. `language` is 'english' or 'spanish'; None follows the
+    global config.OUTPUT_LANGUAGE. Returns {'subject', 'body'}.
     """
     return _structure(
         client,
-        _email_system(icp, language),
+        _email_system(icp, language or get_output_language()),
         "Write a cold outreach email to this company, grounded only in the facts "
         "below.\n\n=== PROSPECT ===\n" + _email_context(record),
         EMAIL_SCHEMA,

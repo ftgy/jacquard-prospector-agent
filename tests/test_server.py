@@ -87,11 +87,11 @@ def test_draft_email_endpoint(client, monkeypatch):
 
     monkeypatch.setattr(service, "draft_email_for", fake)
     pid = db.insert_prospect(make_record("Acme"))
-    # no body -> defaults to english
+    # no body -> language None, i.e. follow the global config in draft_email_for
     r = client.post(f"/api/prospects/{pid}/email")
     assert r.status_code == 200
     assert r.json()["subject"] == "Quick idea for Acme"
-    assert calls["language"] == "english"
+    assert calls["language"] is None
     # explicit spanish flows through
     r = client.post(f"/api/prospects/{pid}/email", json={"language": "spanish"})
     assert r.status_code == 200
