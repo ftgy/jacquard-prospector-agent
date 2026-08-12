@@ -99,7 +99,11 @@ The dashboard has three tabs:
 - **Research a niche** — run discovery on a niche. Results are grouped under the
   query that produced them, so you can see which niche each prospect came from.
 - **Research companies** — qualify specific named companies, likewise grouped by
-  the query.
+  the query. Unlike discovery, this tab does **not** skip companies you already
+  have — naming one re-researches it, and the fresh record is kept alongside the
+  old one (nothing is deleted; the new run just shows as its own group). Tick
+  **Thorough** for a deeper pass (more web searches and a longer summary) on
+  companies you care about; it's slower and costs more, so it's off by default.
 
 Each prospect row opens a detail drawer (pain points → agent solutions, buying
 signals, sources). A stat rail shows the tier breakdown and average fit, and runs
@@ -146,11 +150,16 @@ were generated in.
 
 ## Avoiding duplicate work
 
-Runs never re-research a company you already have. Before spending on research,
-each run drops candidates that match an existing prospect by **company name or
-website domain** (case- and URL-insensitive), plus repeats within the same batch.
-A company whose research previously *failed* stays eligible, so a transient error
-can be retried rather than skipped forever.
+**Discovery** never re-researches a company you already have. Before spending on
+research, a discovery run drops candidates that match an existing prospect by
+**company name or website domain** (case- and URL-insensitive), plus repeats
+within the same batch. A company whose research previously *failed* stays
+eligible, so a transient error can be retried rather than skipped forever.
+
+The **Research companies** tab is the deliberate exception: it never filters, so
+you can re-research a company on demand. A re-run keeps the earlier record and
+adds the fresh one as a new run group — nothing is deleted, so you can compare or
+clean up the old one yourself.
 
 Because of that dedup, a repeated discovery on the same niche would otherwise
 return nothing new. Discovery instead **keeps trying**: it re-asks the model with

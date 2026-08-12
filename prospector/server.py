@@ -50,6 +50,7 @@ class RunRequest(BaseModel):
     kind: str = Field(..., pattern="^(discover|companies)$")
     query: str = Field(..., min_length=1)
     count: int = Field(10, ge=1, le=50)
+    thorough: bool = False  # deeper research pass (Research-companies tab opt-in)
 
 
 class NicheRequest(BaseModel):
@@ -156,7 +157,8 @@ def api_create_run(req: RunRequest):
     # Import here so browsing works even if the agent stack can't be built.
     from .service import start_run_async
     try:
-        run_id = start_run_async(req.kind, req.query, req.count)
+        run_id = start_run_async(req.kind, req.query, req.count,
+                                 thorough=req.thorough)
     except SystemExit as e:  # make_client() with no API key
         raise HTTPException(400, str(e))
     return {"run_id": run_id}

@@ -116,6 +116,9 @@
   .run-row input[type=text] { flex: 1; min-width: 220px; }
   .run-row input[type=number] { width: 72px; }
   .run-hint { font-size: 12px; color: var(--muted); margin-top: 9px; font-family: var(--mono); }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+            color: var(--ink-2); cursor: pointer; user-select: none; white-space: nowrap; }
+  .toggle input { accent-color: var(--accent); cursor: pointer; }
 
   /* niche chips */
   .niche-results { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
@@ -380,9 +383,12 @@
       <h2>Research specific companies</h2>
       <div class="run-row">
         <input type="text" id="companyQuery" placeholder="Company names, comma-separated — e.g. Acme Inc, Globex, Initech">
+        <label class="toggle" title="Deeper pass: more web searches and a longer summary. Slower and costs more.">
+          <input type="checkbox" id="companyThorough"> Thorough
+        </label>
         <button class="icon-btn primary" id="companyRunBtn">▶ Research &amp; qualify</button>
       </div>
-      <div class="run-hint">Researches &amp; qualifies exactly the companies you name.</div>
+      <div class="run-hint">Researches &amp; qualifies exactly the companies you name. Re-running a company you already have replaces its old record. Thorough = deeper, slower, pricier.</div>
     </div>
     <div class="groups" id="companies-groups"></div>
   </section>
@@ -847,6 +853,7 @@ $("#companyRunBtn").onclick = () => {
   startRun("companies", {
     kind: "companies", query: $("#companyQuery").value.trim(),
     count: Math.min(Math.max(names.length, 1), 50),
+    thorough: $("#companyThorough").checked,
     btn: $("#companyRunBtn"), empty: "Enter at least one company name.",
   });
 };
@@ -858,7 +865,7 @@ async function startRun(tab, o){
   o.btn.disabled = true;
   try {
     const res = await fetch("/api/runs", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ kind: o.kind, query: o.query, count: o.count })});
+      body: JSON.stringify({ kind: o.kind, query: o.query, count: o.count, thorough: !!o.thorough })});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
     const { run_id } = await res.json();
     await loadGroups(tab);                 // the new run shows immediately as a group

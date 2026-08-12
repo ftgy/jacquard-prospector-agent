@@ -41,12 +41,22 @@ def _output_language_note() -> str:
             f"other proper nouns exactly as they appear; translate everything else.")
 
 
-def _web_search_tool() -> dict:
-    return {"type": get_web_search_tool(), "name": "web_search", "max_uses": 6}
+# Research depth. The default ("normal") is the historical setting; "thorough" is
+# opt-in per run from the Research-companies tab — more web searches and a longer
+# summary buy deeper coverage at higher cost. See research_company().
+DEFAULT_SEARCH_USES = 6
+DEFAULT_SEARCH_TOKENS = 4000
+THOROUGH_SEARCH_USES = 12
+THOROUGH_SEARCH_TOKENS = 8000
+
+
+def _web_search_tool(max_uses: int = DEFAULT_SEARCH_USES) -> dict:
+    return {"type": get_web_search_tool(), "name": "web_search", "max_uses": max_uses}
 
 
 def _search(client: anthropic.Anthropic, system: str, ask: str,
-            max_tokens: int = 4000) -> dict:
+            max_tokens: int = DEFAULT_SEARCH_TOKENS,
+            max_uses: int = DEFAULT_SEARCH_USES) -> dict:
     """Answer `ask` using live web search. Returns {'text', 'sources'}.
 
     Two backends (see search.py): a separate grounded model (Gemini), or Claude's
@@ -54,20 +64,20 @@ def _search(client: anthropic.Anthropic, system: str, ask: str,
     """
     if get_search_backend() == "gemini":
         return grounded_search(system, ask, max_tokens)
-    return _anthropic_search(client, system, ask, max_tokens)
+    return _anthropic_search(client, system, ask, max_tokens, max_uses)
 
 
 def _anthropic_search(client: anthropic.Anthropic, system: str, ask: str,
-                      max_tokens: int) -> dict:
+                      max_tokens: int, max_uses: int = DEFAULT_SEARCH_USES) -> dict:
     """Claude + the web_search server tool, resuming if the search loop pauses."""
     messages = [{"role": "user", "content": ask}]
-    for _ in range(6):
+    for _ in range(max_uses + 2):  # a few extra passes to absorb pause_turn resumes
         resp = client.messages.create(
             model=get_model(),
             max_tokens=max_tokens,
             system=system,
             thinking={"type": "adaptive"},
-            tools=[_web_search_tool()],
+            tools=[_web_search_tool(max_uses)],
             messages=messages,
         )
         if resp.stop_reason == "pause_turn":
@@ -316,14 +326,38 @@ use web search to find concrete, current facts. Prioritize:
 Be factual and concise. Never invent facts — if something isn't found, say so. \
 Prefer recent sources. End with a short bulleted evidence list."""
 
+# Appended to the research prompt for a "thorough" run: pushes the model to search
+# harder and go deeper, to match the higher search/token budget it's given.
+THOROUGH_RESEARCH_NOTE = """
 
-def research_company(client: anthropic.Anthropic, company: str, hint: str = "") -> dict:
-    """Research one company. Returns {'text': summary, 'sources': [{title,url}]}."""
+This is a THOROUGH research pass — spend the larger search budget. Don't stop at \
+the first summary: dig into the company's own site (about, careers, blog, product \
+pages), recent news and funding, LinkedIn/Crunchbase-style profiles, job postings, \
+and reviews. Corroborate key facts across more than one source. Go deeper on the \
+signals of manual/repetitive work and on budget/hiring evidence — these drive \
+qualification. Produce a fuller, well-organized summary while staying strictly \
+factual."""
+
+
+def research_company(client: anthropic.Anthropic, company: str, hint: str = "",
+                     thorough: bool = False) -> dict:
+    """Research one company. Returns {'text': summary, 'sources': [{title,url}]}.
+
+    `thorough` opts into a deeper pass: more web searches and a longer summary
+    (see the *_SEARCH_USES / *_SEARCH_TOKENS constants), plus a prompt that pushes
+    the model to corroborate across sources. Off by default to keep normal runs
+    fast and cheap.
+    """
     ask = f"Research this company as a potential client: {company}."
     if hint:
         ask += f" Extra context: {hint}."
     ask += " Search the web and summarize what you find."
-    return _search(client, RESEARCH_SYSTEM + _output_language_note(), ask)
+    system = RESEARCH_SYSTEM + (THOROUGH_RESEARCH_NOTE if thorough else "")
+    return _search(
+        client, system + _output_language_note(), ask,
+        max_tokens=THOROUGH_SEARCH_TOKENS if thorough else DEFAULT_SEARCH_TOKENS,
+        max_uses=THOROUGH_SEARCH_USES if thorough else DEFAULT_SEARCH_USES,
+    )
 
 
 def _extract_sources(resp) -> list:
@@ -416,9 +450,13 @@ def qualify_company(client: anthropic.Anthropic, company: str, research_text: st
 
 
 def run_prospect(client: anthropic.Anthropic, company: str, icp: str,
-                 hint: str = "") -> dict:
-    """Full pipeline for one company: research -> qualify -> combined record."""
-    research = research_company(client, company, hint)
+                 hint: str = "", thorough: bool = False) -> dict:
+    """Full pipeline for one company: research -> qualify -> combined record.
+
+    `thorough` deepens the research stage only (see research_company); qualifying
+    always scores against whatever research produced.
+    """
+    research = research_company(client, company, hint, thorough=thorough)
     verdict = qualify_company(client, company, research["text"], icp)
     verdict["research_summary"] = research["text"]
     verdict["sources"] = research["sources"]

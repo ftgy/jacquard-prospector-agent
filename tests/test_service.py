@@ -35,7 +35,7 @@ def test_friendly_api_error_tls_hint():
 
 def test_run_batch_persists_and_returns(monkeypatch):
     monkeypatch.setattr(service, "run_prospect",
-                        lambda client, company, icp, hint: make_record(company))
+                        lambda client, company, icp, hint, thorough=False: make_record(company))
     prospects = [{"company": "Acme", "hint": ""}, {"company": "Globex", "hint": ""}]
     results = service.run_batch(FakeClient(), prospects)
 
@@ -68,7 +68,7 @@ def test_run_batch_one_failure_does_not_kill_the_batch(monkeypatch):
 
 def test_run_batch_bumps_run_progress(monkeypatch):
     monkeypatch.setattr(service, "run_prospect",
-                        lambda client, company, icp, hint: make_record(company))
+                        lambda client, company, icp, hint, thorough=False: make_record(company))
     run_id = db.create_run("companies", "Acme, Globex", 2)
     db.set_run_total(run_id, 2)
     service.run_batch(FakeClient(), [{"company": "Acme", "hint": ""},
@@ -78,7 +78,7 @@ def test_run_batch_bumps_run_progress(monkeypatch):
 
 def test_execute_run_companies_marks_done(monkeypatch):
     monkeypatch.setattr(service, "run_prospect",
-                        lambda client, company, icp, hint: make_record(company))
+                        lambda client, company, icp, hint, thorough=False: make_record(company))
     run_id = db.create_run("companies", "Acme, Globex", 2)
     service._execute_run(FakeClient(), run_id, "companies", "Acme, Globex", 2)
 
@@ -89,36 +89,24 @@ def test_execute_run_companies_marks_done(monkeypatch):
     assert {r["company"] for r in db.list_prospects()} == {"Acme", "Globex"}
 
 
-def test_execute_run_skips_already_researched(monkeypatch):
-    # Acme is already in the DB; a new run that includes it must not re-research it.
+def test_execute_run_companies_reresearches_and_keeps_old(monkeypatch):
+    # Acme is already in the DB. The Research-companies tab does NOT filter known
+    # companies (unlike discovery): naming Acme re-researches it, and the fresh
+    # record is kept alongside the old one (no records are deleted).
     db.insert_prospect(make_record("Acme"))
     researched = []
     monkeypatch.setattr(service, "run_prospect",
-                        lambda client, company, icp, hint: researched.append(company)
+                        lambda client, company, icp, hint, thorough=False: researched.append(company)
                         or make_record(company))
     run_id = db.create_run("companies", "Acme, Globex", 2)
     service._execute_run(FakeClient(), run_id, "companies", "Acme, Globex", 2)
 
     run = db.get_run(run_id)
     assert run["status"] == "done"
-    assert researched == ["Globex"]          # Acme was skipped, only Globex researched
-    assert run["total"] == 1 and run["completed"] == 1
-    # No duplicate Acme row was written.
-    assert [r["company"] for r in db.list_prospects()].count("Acme") == 1
-
-
-def test_execute_run_skips_case_and_whitespace_insensitively(monkeypatch):
-    db.insert_prospect(make_record("Acme"))
-    researched = []
-    monkeypatch.setattr(service, "run_prospect",
-                        lambda client, company, icp, hint: researched.append(company)
-                        or make_record(company))
-    run_id = db.create_run("companies", "  acme  ", 1)
-    service._execute_run(FakeClient(), run_id, "companies", "  acme  ", 1)
-
-    # All requested companies were already known -> done, nothing researched.
-    assert db.get_run(run_id)["status"] == "done"
-    assert researched == []
+    assert researched == ["Acme", "Globex"]  # both researched — Acme not skipped
+    assert run["total"] == 2 and run["completed"] == 2
+    # The old Acme record is preserved, so both the old and new rows now exist.
+    assert [r["company"] for r in db.list_prospects()].count("Acme") == 2
 
 
 def test_execute_run_discover_skips_known_domain_under_new_name(monkeypatch):
@@ -132,7 +120,7 @@ def test_execute_run_discover_skips_known_domain_under_new_name(monkeypatch):
                             {"company": "Globex", "hint": "h", "website": "globex.io"}])
     researched = []
     monkeypatch.setattr(service, "run_prospect",
-                        lambda client, company, icp, hint: researched.append(company)
+                        lambda client, company, icp, hint, thorough=False: researched.append(company)
                         or make_record(company))
     run_id = db.create_run("discover", "widgets", 2)
     service._execute_run(FakeClient(), run_id, "discover", "widgets", 2)
@@ -148,7 +136,7 @@ def test_execute_run_retries_previously_errored_company(monkeypatch):
     db.insert_prospect({"company": "Acme", "error": "boom"})
     researched = []
     monkeypatch.setattr(service, "run_prospect",
-                        lambda client, company, icp, hint: researched.append(company)
+                        lambda client, company, icp, hint, thorough=False: researched.append(company)
                         or make_record(company))
     run_id = db.create_run("companies", "Acme", 1)
     service._execute_run(FakeClient(), run_id, "companies", "Acme", 1)
@@ -162,7 +150,7 @@ def test_execute_run_discover_uses_candidates(monkeypatch):
                             {"company": "Found One", "hint": "h1"},
                             {"company": "Found Two", "hint": "h2"}])
     monkeypatch.setattr(service, "run_prospect",
-                        lambda client, company, icp, hint: make_record(company))
+                        lambda client, company, icp, hint, thorough=False: make_record(company))
     run_id = db.create_run("discover", "agencies", 2)
     service._execute_run(FakeClient(), run_id, "discover", "agencies", 2)
 
@@ -339,7 +327,7 @@ def test_start_run_async_rejects_unknown_kind():
 def test_start_run_async_creates_run_and_thread(monkeypatch):
     """A specific-companies run, driven to completion, ends up 'done' with rows."""
     monkeypatch.setattr(service, "run_prospect",
-                        lambda client, company, icp, hint: make_record(company))
+                        lambda client, company, icp, hint, thorough=False: make_record(company))
     run_id = service.start_run_async("companies", "Acme, Globex", 2, client=FakeClient())
 
     # The worker is a daemon thread; give it a moment, then assert the outcome.

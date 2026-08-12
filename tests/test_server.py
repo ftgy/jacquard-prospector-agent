@@ -173,15 +173,16 @@ def test_create_run_starts_and_returns_id(client, monkeypatch):
     from prospector import service
     calls = {}
 
-    def fake_start(kind, query, count):
-        calls.update(kind=kind, query=query, count=count)
+    def fake_start(kind, query, count, thorough=False):
+        calls.update(kind=kind, query=query, count=count, thorough=thorough)
         return 4242
 
     monkeypatch.setattr(service, "start_run_async", fake_start)
-    r = client.post("/api/runs", json={"kind": "discover", "query": "agencies", "count": 5})
+    r = client.post("/api/runs", json={"kind": "companies", "query": "Acme", "count": 5,
+                                        "thorough": True})
     assert r.status_code == 200
     assert r.json() == {"run_id": 4242}
-    assert calls == {"kind": "discover", "query": "agencies", "count": 5}
+    assert calls == {"kind": "companies", "query": "Acme", "count": 5, "thorough": True}
 
 
 def test_niches_validation(client):

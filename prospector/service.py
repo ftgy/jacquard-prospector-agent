@@ -51,18 +51,20 @@ def friendly_api_error(e: Exception) -> str:
 
 
 def run_batch(client: anthropic.Anthropic, prospects: list[dict], icp: str = ICP,
-              run_id: int | None = None) -> list[dict]:
+              run_id: int | None = None, thorough: bool = False) -> list[dict]:
     """Research + qualify each prospect, persisting results as they land.
 
     `prospects` is a list of {'company', 'hint'}. Returns the list of result
     records (qualified verdicts or {'company', 'error'}). If run_id is given, each
-    completed company bumps that run's progress counter.
+    completed company bumps that run's progress counter. `thorough` deepens the
+    research stage (see agent.run_prospect).
     """
     results = []
     for p in prospects:
         company = p["company"]
         try:
-            record = run_prospect(client, company, icp, p.get("hint", ""))
+            record = run_prospect(client, company, icp, p.get("hint", ""),
+                                  thorough=thorough)
         except Exception as e:  # one bad company shouldn't kill the batch
             record = {"company": company, "error": friendly_api_error(e)}
         if p.get("website"):  # keep the discovered domain for future dedup
@@ -109,7 +111,7 @@ def _discover_unresearched(client: anthropic.Anthropic, niche: str,
 
 
 def _execute_run(client: anthropic.Anthropic, run_id: int, kind: str,
-                 query: str, count: int) -> None:
+                 query: str, count: int, thorough: bool = False) -> None:
     """Body of a run, executed on the worker thread. Persists via run_batch and
     marks the run done/error at the end."""
     try:
@@ -123,6 +125,13 @@ def _execute_run(client: anthropic.Anthropic, run_id: int, kind: str,
                 return
             prospects = [{"company": c["company"], "hint": c.get("hint", ""),
                           "website": c.get("website", "")} for c in candidates]
+            # Discovery skips companies already in the DB (by name or domain) so a
+            # repeated search never re-researches them. The Research-companies tab
+            # deliberately does NOT filter — naming a known company re-researches it.
+            prospects = db.filter_unresearched(prospects)
+            if not prospects:
+                db.finish_run(run_id, "done")  # everything was already researched
+                return
         else:  # 'companies' — query is a comma/newline separated list of names
             names = [n.strip() for n in query.replace("\n", ",").split(",")
                      if n.strip()]
@@ -132,21 +141,14 @@ def _execute_run(client: anthropic.Anthropic, run_id: int, kind: str,
             db.finish_run(run_id, "error", "No companies to process.")
             return
 
-        # Skip companies already in the DB (by name or domain) so a re-run never
-        # re-researches them.
-        prospects = db.filter_unresearched(prospects)
-        if not prospects:
-            db.finish_run(run_id, "done")  # everything was already researched
-            return
-
         db.set_run_total(run_id, len(prospects))
-        run_batch(client, prospects, ICP, run_id=run_id)
+        run_batch(client, prospects, ICP, run_id=run_id, thorough=thorough)
         db.finish_run(run_id, "done")
     except Exception as e:  # discovery itself failed, or something unexpected
         db.finish_run(run_id, "error", friendly_api_error(e))
 
 
-def start_run_async(kind: str, query: str, count: int = 10,
+def start_run_async(kind: str, query: str, count: int = 10, thorough: bool = False,
                     client: anthropic.Anthropic | None = None) -> int:
     """Create a run row and launch it on a daemon thread. Returns the run id
     immediately so the caller (HTTP handler) can respond and the frontend can poll
@@ -157,7 +159,7 @@ def start_run_async(kind: str, query: str, count: int = 10,
     run_id = db.create_run(kind, query, count)
     threading.Thread(
         target=_execute_run,
-        args=(client, run_id, kind, query, count),
+        args=(client, run_id, kind, query, count, thorough),
         daemon=True,
     ).start()
     return run_id
