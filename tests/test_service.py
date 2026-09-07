@@ -337,6 +337,66 @@ def test_start_run_async_creates_run_and_thread(monkeypatch):
     assert {r["company"] for r in db.list_prospects()} == {"Acme", "Globex"}
 
 
+# --- Gmail outreach: send + reply tracking -----------------------------------
+
+def test_send_outreach_persists_edits_and_marks_sent(monkeypatch):
+    from prospector import gmailer
+    monkeypatch.setattr(gmailer, "send_email",
+                        lambda to, subject, body: {"message_id": "m", "thread_id": "th"})
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "orig", "orig body", "spanish")
+    db.set_prospect_contact(pid, "hola@acme.es")
+
+    out = service.send_outreach(pid, subject="new subj", body="new body")
+    assert out["thread_id"] == "th" and out["sent_at"]
+    email = db.get_prospect(pid)["email"]
+    assert email["subject"] == "new subj" and email["body"] == "new body"
+    assert email["sent_at"] and email["language"] == "spanish"
+
+
+def test_send_outreach_requires_contact(monkeypatch):
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "s", "b")
+    with pytest.raises(ValueError):
+        service.send_outreach(pid)
+
+
+def test_send_outreach_missing_prospect():
+    with pytest.raises(LookupError):
+        service.send_outreach(9999)
+
+
+def test_refresh_replies_records_found(monkeypatch):
+    from prospector import gmailer
+    monkeypatch.setattr(gmailer, "ensure_authorized", lambda: None)
+    monkeypatch.setattr(gmailer, "account_email", lambda: "me@feina.dev")
+    # first thread replied, second not
+    replies = {"ta": "1757230800000", "tb": None}
+    monkeypatch.setattr(gmailer, "check_reply", lambda tid, me=None: replies[tid])
+
+    a = db.insert_prospect(make_record("A")); db.mark_sent(a, "ma", "ta")
+    b = db.insert_prospect(make_record("B")); db.mark_sent(b, "mb", "tb")
+
+    out = service.refresh_replies()
+    assert out == {"checked": 2, "new_replies": 1}
+    # a is now answered and drops off the worklist; b still awaits a reply.
+    assert db.sent_awaiting_reply() == [{"id": b, "thread_id": "tb"}]
+
+
+def test_refresh_replies_swallows_per_thread_errors(monkeypatch):
+    from prospector import gmailer
+    monkeypatch.setattr(gmailer, "ensure_authorized", lambda: None)
+    monkeypatch.setattr(gmailer, "account_email", lambda: "me@feina.dev")
+
+    def boom(tid, me=None):
+        raise RuntimeError("thread fetch failed")
+    monkeypatch.setattr(gmailer, "check_reply", boom)
+
+    pid = db.insert_prospect(make_record("A")); db.mark_sent(pid, "m", "t")
+    out = service.refresh_replies()                 # must not raise
+    assert out == {"checked": 1, "new_replies": 0}
+
+
 def _wait_until(pred, timeout=5.0):
     import time
     deadline = time.time() + timeout

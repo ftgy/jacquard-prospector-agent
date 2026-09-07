@@ -163,6 +163,78 @@ def test_email_absent_from_summary_list():
     assert "email" not in db.list_prospects()[0]  # summary rows stay light
 
 
+# --- outreach: send + reply tracking -----------------------------------------
+
+def test_mark_sent_records_ids_and_surfaces_on_record():
+    pid = db.insert_prospect(make_record("Sent Co"))
+    db.set_prospect_email(pid, "s", "b")
+    assert db.mark_sent(pid, "msg1", "thr1") is True
+    email = db.get_prospect(pid)["email"]
+    assert email["sent_at"] and email["replied_at"] is None
+
+
+def test_mark_sent_missing_prospect():
+    assert db.mark_sent(9999, "m", "t") is False
+
+
+def test_sent_awaiting_reply_lists_only_unanswered_with_thread():
+    a = db.insert_prospect(make_record("A"))
+    b = db.insert_prospect(make_record("B"))
+    c = db.insert_prospect(make_record("C"))
+    db.mark_sent(a, "ma", "ta")             # awaiting
+    db.mark_sent(b, "mb", "tb")
+    db.mark_replied(b, "2026-09-07T10:00:00+00:00")  # answered -> excluded
+    # c never sent -> excluded
+    worklist = db.sent_awaiting_reply()
+    assert [w["id"] for w in worklist] == [a]
+    assert worklist[0]["thread_id"] == "ta"
+
+
+def test_mark_replied_clears_from_worklist_and_shows_on_record():
+    pid = db.insert_prospect(make_record("Replier"))
+    db.set_prospect_email(pid, "s", "b")
+    db.mark_sent(pid, "m", "t")
+    db.mark_replied(pid, "2026-09-07T12:34:56+00:00")
+    assert db.sent_awaiting_reply() == []
+    assert db.get_prospect(pid)["email"]["replied_at"] == "2026-09-07T12:34:56+00:00"
+
+
+def test_resending_clears_prior_reply():
+    pid = db.insert_prospect(make_record("Resend"))
+    db.set_prospect_email(pid, "s", "b")
+    db.mark_sent(pid, "m1", "t1")
+    db.mark_replied(pid, "2026-09-07T12:00:00+00:00")
+    db.mark_sent(pid, "m2", "t2")           # a fresh send resets reply tracking
+    assert db.get_prospect(pid)["email"]["replied_at"] is None
+    assert db.sent_awaiting_reply()[0]["thread_id"] == "t2"
+
+
+def test_outreach_stats_counts_totals_and_reply_rate():
+    for i in range(4):
+        pid = db.insert_prospect(make_record(f"Co{i}"))
+        db.mark_sent(pid, f"m{i}", f"t{i}")
+    # one of the four replied
+    first = db.sent_awaiting_reply()[0]["id"]
+    db.mark_replied(first, "2026-09-07T09:00:00+00:00")
+
+    s = db.outreach_stats()
+    assert s["total_sent"] == 4
+    assert s["total_replied"] == 1
+    assert s["reply_rate"] == 0.25
+    assert s["sent_today"] == 4        # marked just now, local day
+    assert s["awaiting_reply"] == 3
+    assert len(s["series"]) == 14      # default trailing window
+    assert s["series"][-1]["sent"] == 4  # today is the last bucket
+    assert len(s["recent"]) == 4
+
+
+def test_outreach_stats_empty_has_no_reply_rate():
+    s = db.outreach_stats()
+    assert s["total_sent"] == 0
+    assert s["reply_rate"] is None
+    assert s["recent"] == []
+
+
 # --- runs --------------------------------------------------------------------
 
 def test_run_lifecycle():

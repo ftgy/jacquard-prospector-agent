@@ -16,7 +16,7 @@ this simple and safe for our low write volume.
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -83,6 +83,10 @@ def init_db() -> None:
                 contact_website  TEXT,
                 contact_source   TEXT,   -- URL the email was found on
                 contact_at       TEXT,   -- when the contact was looked up
+                sent_at          TEXT,   -- when we sent the outreach via Gmail
+                gmail_message_id TEXT,   -- Gmail id of the sent message
+                gmail_thread_id  TEXT,   -- its thread, followed to detect replies
+                replied_at       TEXT,   -- when a reply was first detected
                 error            TEXT,
                 created_at       TEXT NOT NULL
             );
@@ -95,7 +99,8 @@ def init_db() -> None:
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(prospects)")}
         for col in ("domain", "notes", "email_subject", "email_body", "email_at",
                     "email_lang", "contact_email", "contact_phone", "contact_website",
-                    "contact_source", "contact_at"):
+                    "contact_source", "contact_at", "sent_at", "gmail_message_id",
+                    "gmail_thread_id", "replied_at"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT")
 
@@ -337,7 +342,8 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
         rec["email"] = (
             {"subject": row["email_subject"], "body": row["email_body"],
              "generated_at": row["email_at"], "language": row["email_lang"],
-             "contact": _contact_dict(row)}
+             "contact": _contact_dict(row),
+             "sent_at": row["sent_at"], "replied_at": row["replied_at"]}
             if row["email_subject"] else None
         )
         rec["research_summary"] = row["research_summary"]
@@ -435,6 +441,111 @@ def set_prospect_contact(prospect_id: int, email: str, phone: str | None = None,
         )
     return {"email": email, "phone": phone, "website": website,
             "source": source, "found_at": ts}
+
+
+def mark_sent(prospect_id: int, message_id: str, thread_id: str) -> bool:
+    """Record that the outreach email was sent via Gmail, with its ids.
+
+    Stores sent_at (now) and the Gmail message/thread ids so the thread can be
+    polled later for a reply. Clears any prior replied_at, since this is a fresh
+    send. Returns False if there's no such prospect.
+    """
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET sent_at=?, gmail_message_id=?, "
+            "gmail_thread_id=?, replied_at=NULL WHERE id=?",
+            (_now(), message_id, thread_id, prospect_id),
+        )
+        return cur.rowcount > 0
+
+
+def mark_replied(prospect_id: int, replied_at: str) -> bool:
+    """Record when a reply was first detected on a sent prospect's thread."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET replied_at=? WHERE id=?",
+            (replied_at, prospect_id),
+        )
+        return cur.rowcount > 0
+
+
+def sent_awaiting_reply() -> list[dict]:
+    """Sent prospects with a thread but no reply yet — the reply-poll worklist.
+
+    Returns [{id, thread_id}, ...]. Only rows we can actually follow (a stored
+    gmail_thread_id) and haven't already marked replied.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, gmail_thread_id FROM prospects "
+            "WHERE sent_at IS NOT NULL AND replied_at IS NULL "
+            "AND gmail_thread_id IS NOT NULL"
+        ).fetchall()
+    return [{"id": r["id"], "thread_id": r["gmail_thread_id"]} for r in rows]
+
+
+def _local_date(iso_ts: str) -> date:
+    """The local calendar date of a stored UTC ISO timestamp.
+
+    Stats are counted in the machine's local timezone (where the sending happens),
+    so a send late in the evening counts toward that day, not the UTC one.
+    """
+    return datetime.fromisoformat(iso_ts).astimezone().date()
+
+
+def outreach_stats(days: int = 14) -> dict:
+    """Send/reply numbers for the Outreach tab.
+
+    Counts are by local calendar day. Returns totals, today's and this week's
+    (Monday-start) send counts, the reply count + rate, a per-day series for the
+    last `days` days (oldest first), and the most recent sends with their reply
+    state — enough to render progress and a recent-activity list.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, company, contact_email, sent_at, replied_at "
+            "FROM prospects WHERE sent_at IS NOT NULL "
+            "ORDER BY sent_at DESC"
+        ).fetchall()
+
+    today = datetime.now().astimezone().date()
+    week_start = today - timedelta(days=today.weekday())   # Monday of this week
+
+    total_sent = len(rows)
+    total_replied = sum(1 for r in rows if r["replied_at"])
+    sent_today = sent_week = 0
+    # Per-day buckets for the trailing window, seeded to zero so quiet days show.
+    window = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
+    by_day = {d.isoformat(): {"date": d.isoformat(), "sent": 0, "replied": 0}
+              for d in window}
+
+    for r in rows:
+        d = _local_date(r["sent_at"])
+        if d == today:
+            sent_today += 1
+        if d >= week_start:
+            sent_week += 1
+        bucket = by_day.get(d.isoformat())
+        if bucket:
+            bucket["sent"] += 1
+            if r["replied_at"]:
+                bucket["replied"] += 1
+
+    recent = [
+        {"id": r["id"], "company": r["company"], "contact_email": r["contact_email"],
+         "sent_at": r["sent_at"], "replied_at": r["replied_at"]}
+        for r in rows[:15]
+    ]
+    return {
+        "total_sent": total_sent,
+        "total_replied": total_replied,
+        "reply_rate": round(total_replied / total_sent, 3) if total_sent else None,
+        "sent_today": sent_today,
+        "sent_week": sent_week,
+        "awaiting_reply": total_sent - total_replied,
+        "series": list(by_day.values()),
+        "recent": recent,
+    }
 
 
 def grouped_results(kind: str) -> dict:

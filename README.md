@@ -92,7 +92,7 @@ the database once:
 python scripts/import_results.py
 ```
 
-The dashboard has three tabs:
+The dashboard has four tabs:
 
 - **Niches** — type a city, get clickable niche suggestions; picking one loads it
   into the next tab.
@@ -104,6 +104,11 @@ The dashboard has three tabs:
   old one (nothing is deleted; the new run just shows as its own group). Tick
   **Thorough** for a deeper pass (more web searches and a longer summary) on
   companies you care about; it's slower and costs more, so it's off by default.
+- **Outreach** — send drafted emails through your own Gmail account and watch the
+  numbers: sent today, this week, total, replies and reply rate, a 14-day
+  sent/replied bar chart, and a recent-sends list. **Check replies** polls your
+  sent threads for responses. Requires a one-time Gmail connection —
+  see [docs/gmail-setup.md](docs/gmail-setup.md).
 
 Each prospect row opens a detail drawer (pain points → agent solutions, buying
 signals, sources). A stat rail shows the tier breakdown and average fit, and runs
@@ -201,10 +206,12 @@ The code lives in a `prospector/` package; entry points sit at the project root.
 | `prospector/search.py`  | Grounded web search; swappable backend (Gemini / Anthropic). |
 | `prospector/agent.py`   | Core: `discover_candidates()`, `research_company()`, `qualify_company()`, `run_prospect()`. |
 | `prospector/db.py`      | SQLite persistence (`prospector.db`): prospects + runs. |
+| `prospector/gmailer.py` | Gmail send + reply detection for the Outreach tab. See [docs/gmail-setup.md](docs/gmail-setup.md). |
 | `prospector/service.py` | Bridges the agent and the database; shared by the CLI and the web server. |
 | `prospector/server.py`  | FastAPI backend + dashboard (`prospector/static/index.html`). |
 | `run_server.py`         | Web entry: launches the dashboard server. |
 | `scripts/check_setup.py`   | Diagnostic: what your endpoint serves and supports. **Run first.** |
+| `scripts/gmail_auth.py`    | One-time Gmail authorization for the Outreach tab. |
 | `scripts/import_results.py`| Backfill the database from an existing `results.json`. |
 
 ## Troubleshooting
@@ -262,5 +269,6 @@ this task.
 - **More languages**: `OUTPUT_LANGUAGE` currently knows English and Spanish — the
   map in `prospector/config.py` is the only thing to extend.
 
-*(Outreach drafting, contact-finding, and dedup are already built in — see above.)*
+*(Outreach drafting, contact-finding, Gmail send + reply tracking, and dedup are
+already built in — see above.)*
 ```

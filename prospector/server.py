@@ -67,6 +67,12 @@ class EmailRequest(BaseModel):
     language: str | None = Field(None, pattern="^(english|spanish)$")
 
 
+class SendRequest(BaseModel):
+    # The edited subject/body to send. Omitted -> send the stored draft as-is.
+    subject: str | None = Field(None, max_length=500)
+    body: str | None = Field(None, max_length=20000)
+
+
 # --- prospects ---------------------------------------------------------------
 
 @app.get("/api/prospects")
@@ -132,6 +138,57 @@ def api_find_contact(prospect_id: int):
     except LookupError:
         raise HTTPException(404, "prospect not found")
     except SystemExit as e:  # make_client() with no API key
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, friendly_api_error(e))
+
+
+@app.post("/api/prospects/{prospect_id}/send")
+def api_send_outreach(prospect_id: int, req: SendRequest | None = None):
+    """Send the prospect's outreach email via Gmail and record the send.
+
+    Optional body {subject, body} sends (and persists) the edited text; omitted
+    sends the stored draft. Requires a found contact and a connected Gmail account
+    (see docs/gmail-setup.md). Returns {id, sent_at, thread_id}.
+    """
+    from .gmailer import GmailNotConfigured
+    from .service import friendly_api_error, send_outreach
+    req = req or SendRequest()
+    try:
+        return send_outreach(prospect_id, subject=req.subject, body=req.body)
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except GmailNotConfigured as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, friendly_api_error(e))
+
+
+@app.get("/api/gmail/status")
+def api_gmail_status():
+    """Whether the app can send as you, and which account, for the Outreach tab."""
+    from . import gmailer
+    if not gmailer.authorized():
+        return {"connected": False, "email": None}
+    return {"connected": True, "email": gmailer.account_email()}
+
+
+@app.get("/api/outreach")
+def api_outreach():
+    """Send/reply statistics for the Outreach tab."""
+    return db.outreach_stats()
+
+
+@app.post("/api/outreach/refresh-replies")
+def api_refresh_replies():
+    """Poll sent-but-unanswered threads for replies; record any found."""
+    from .gmailer import GmailNotConfigured
+    from .service import friendly_api_error, refresh_replies
+    try:
+        return refresh_replies()
+    except GmailNotConfigured as e:
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, friendly_api_error(e))

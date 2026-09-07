@@ -163,6 +163,81 @@ def test_draft_email_api_failure_502(client, monkeypatch):
     assert "exploded" in r.json()["detail"]
 
 
+def _draft_and_contact(pid):
+    """A prospect ready to send: has a stored draft and a contact address."""
+    db.set_prospect_email(pid, "Quick idea", "Hola…", "spanish")
+    db.set_prospect_contact(pid, "hola@acme.es")
+
+
+def test_send_success_marks_sent(client, monkeypatch):
+    from prospector import gmailer
+    sent_args = {}
+
+    def fake_send(to, subject, body):
+        sent_args.update(to=to, subject=subject, body=body)
+        return {"message_id": "m1", "thread_id": "t1"}
+
+    monkeypatch.setattr(gmailer, "send_email", fake_send)
+    pid = db.insert_prospect(make_record("Acme"))
+    _draft_and_contact(pid)
+
+    r = client.post(f"/api/prospects/{pid}/send",
+                    json={"subject": "Edited subj", "body": "Edited body"})
+    assert r.status_code == 200
+    assert r.json()["sent_at"] and r.json()["thread_id"] == "t1"
+    # the edited text is what went out, and it was persisted
+    assert sent_args == {"to": "hola@acme.es", "subject": "Edited subj",
+                         "body": "Edited body"}
+    email = db.get_prospect(pid)["email"]
+    assert email["sent_at"] and email["subject"] == "Edited subj"
+
+
+def test_send_without_contact_400(client):
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "s", "b")            # draft but no contact
+    r = client.post(f"/api/prospects/{pid}/send")
+    assert r.status_code == 400
+    assert "contact" in r.json()["detail"].lower()
+
+
+def test_send_missing_prospect_404(client):
+    assert client.post("/api/prospects/9999/send").status_code == 404
+
+
+def test_send_not_connected_400(client, monkeypatch, tmp_path):
+    from prospector import gmailer
+    # No token file -> the real gmailer path raises GmailNotConfigured -> 400.
+    monkeypatch.setattr(gmailer, "TOKEN_PATH", tmp_path / "nope.json")
+    pid = db.insert_prospect(make_record("Acme"))
+    _draft_and_contact(pid)
+    r = client.post(f"/api/prospects/{pid}/send")
+    assert r.status_code == 400
+    assert "gmail" in r.json()["detail"].lower()
+
+
+def test_gmail_status_disconnected(client, monkeypatch, tmp_path):
+    from prospector import gmailer
+    monkeypatch.setattr(gmailer, "TOKEN_PATH", tmp_path / "nope.json")
+    r = client.get("/api/gmail/status")
+    assert r.status_code == 200
+    assert r.json() == {"connected": False, "email": None}
+
+
+def test_outreach_endpoint(client):
+    pid = db.insert_prospect(make_record("Acme"))
+    db.mark_sent(pid, "m", "t")
+    s = client.get("/api/outreach").json()
+    assert s["total_sent"] == 1 and s["sent_today"] == 1
+    assert len(s["series"]) == 14
+
+
+def test_refresh_replies_not_connected_400(client, monkeypatch, tmp_path):
+    from prospector import gmailer
+    monkeypatch.setattr(gmailer, "TOKEN_PATH", tmp_path / "nope.json")
+    r = client.post("/api/outreach/refresh-replies")
+    assert r.status_code == 400
+
+
 def test_create_run_validation(client):
     assert client.post("/api/runs", json={"kind": "bogus", "query": "x"}).status_code == 422
     assert client.post("/api/runs", json={"kind": "discover", "query": ""}).status_code == 422

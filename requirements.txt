@@ -2,3 +2,8 @@ anthropic>=0.116
 openai>=2.0
 fastapi>=0.115
 uvicorn[standard]>=0.30
+
+# Gmail API — in-app outreach send + reply tracking (see docs/gmail-setup.md).
+google-api-python-client>=2.100
+google-auth>=2.30
+google-auth-oauthlib>=1.2

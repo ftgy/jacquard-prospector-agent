@@ -3,6 +3,10 @@ venv/
 .env
 results.json
 prospects.csv
+
+# Gmail OAuth secrets — never commit (see docs/gmail-setup.md)
+credentials.json
+token.json
 __pycache__/
 *.pyc
 .pytest_cache/

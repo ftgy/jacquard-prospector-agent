@@ -10,10 +10,11 @@ server (server.py).
 """
 
 import threading
+from datetime import datetime, timezone
 
 import anthropic
 
-from . import db
+from . import db, gmailer
 from .agent import (
     discover_candidates,
     draft_outreach_email,
@@ -243,3 +244,79 @@ def _persist_found(prospect_id: int, found: dict) -> dict:
                                    found.get("phone") or None,
                                    found.get("website") or None,
                                    found.get("source_url") or None)
+
+
+# --- Gmail outreach: send + reply tracking -----------------------------------
+
+def _ms_epoch_to_iso(ms: str | None) -> str:
+    """Gmail's internalDate (ms since epoch, as a string) -> our UTC ISO format.
+
+    Falls back to 'now' if Gmail ever hands back something unparseable, so a
+    detected reply is never dropped for want of a timestamp.
+    """
+    try:
+        return (datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc)
+                .isoformat(timespec="seconds"))
+    except (TypeError, ValueError):
+        return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def send_outreach(prospect_id: int, subject: str | None = None,
+                  body: str | None = None) -> dict:
+    """Send a prospect's outreach email via Gmail and record the send.
+
+    subject/body override the stored draft (the user's in-editor edits); when
+    given they're persisted before sending so the stored copy matches what went
+    out. Uses the stored contact address. Returns {'id', 'sent_at', 'thread_id'}.
+    Raises LookupError if the prospect is gone, ValueError if there's no draft or
+    no address, and gmailer.GmailNotConfigured if the account isn't connected.
+    """
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    email = rec.get("email")
+    if not email:
+        raise ValueError("No drafted email to send — generate one first.")
+    contact = email.get("contact") or {}
+    to = contact.get("email")
+    if not to:
+        raise ValueError("No contact address — use “Find contact” first.")
+
+    subject = subject if subject is not None else email.get("subject", "")
+    body = body if body is not None else email.get("body", "")
+    if not body.strip():
+        raise ValueError("The email body is empty — nothing to send.")
+    # Persist the edited text so the stored draft matches what we actually send.
+    db.set_prospect_email(prospect_id, subject, body,
+                          email.get("language") or get_output_language())
+
+    sent = gmailer.send_email(to, subject, body)
+    db.mark_sent(prospect_id, sent["message_id"], sent["thread_id"])
+    updated = db.get_prospect(prospect_id)
+    return {
+        "id": prospect_id,
+        "sent_at": (updated.get("email") or {}).get("sent_at"),
+        "thread_id": sent["thread_id"],
+    }
+
+
+def refresh_replies() -> dict:
+    """Poll every sent-but-unanswered thread for a reply, recording any found.
+
+    Returns {'checked', 'new_replies'}. Raises gmailer.GmailNotConfigured if the
+    account isn't connected. A per-thread lookup failure is swallowed so one bad
+    thread doesn't abort the sweep.
+    """
+    gmailer.ensure_authorized()       # fail clearly rather than silently no-op
+    worklist = db.sent_awaiting_reply()
+    me = gmailer.account_email()      # resolve once; reused for every thread
+    new_replies = 0
+    for item in worklist:
+        try:
+            reply_ms = gmailer.check_reply(item["thread_id"], me)
+        except Exception:
+            continue
+        if reply_ms:
+            db.mark_replied(item["id"], _ms_epoch_to_iso(reply_ms))
+            new_replies += 1
+    return {"checked": len(worklist), "new_replies": new_replies}

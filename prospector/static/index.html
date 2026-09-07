@@ -283,6 +283,56 @@
   .email-contact .contact-empty { font-size: 12px; color: var(--muted); font-style: italic; }
   .email-contact .contact-find { margin-left: auto; font-style: normal; padding: 5px 10px; font-size: 12px; }
   .email-contact.none { background: var(--surface-2); }
+  .email-saved .sent-pill, .email-saved .reply-pill { display: inline-block; margin-left: 8px;
+    padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .email-saved .sent-pill { color: var(--tier-a);
+    background: color-mix(in srgb, var(--tier-a) 15%, transparent); }
+  .email-saved .reply-pill { color: var(--accent-ink);
+    background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+  /* outreach tab */
+  .gmail-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
+    padding: 11px 14px; border-radius: 10px; margin-bottom: 16px; border: 1px solid var(--hairline); }
+  .gmail-banner.ok { background: color-mix(in srgb, var(--tier-a) 9%, var(--surface));
+    border-color: color-mix(in srgb, var(--tier-a) 35%, var(--hairline)); }
+  .gmail-banner.off { background: color-mix(in srgb, var(--tier-c) 12%, var(--surface));
+    border-color: color-mix(in srgb, var(--tier-c) 40%, var(--hairline)); }
+  .gmail-banner .who { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+  .gmail-banner .grow { flex: 1; }
+  .gmail-banner code { font-family: var(--mono); font-size: 12px; background: var(--surface-2);
+    padding: 1px 6px; border-radius: 5px; }
+  .ostats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--hairline);
+    border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+  .ostat { background: var(--surface); padding: 16px; }
+  .ostat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .ostat .v { font-size: 30px; font-weight: 680; letter-spacing: -.02em; margin-top: 4px;
+    font-variant-numeric: tabular-nums; }
+  .ostat .v small { font-size: 13px; color: var(--muted); font-weight: 500; }
+  .ostat.accent .v { color: var(--accent); } .ostat.good .v { color: var(--tier-a); }
+  .obars { display: flex; align-items: flex-end; gap: 5px; height: 130px; padding: 6px 2px 0; }
+  .obar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%;
+    justify-content: flex-end; }
+  .obar .col { width: 100%; display: flex; flex-direction: column; justify-content: flex-end;
+    height: 100%; }
+  .obar .fill { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; }
+  .obar .fill.rep { background: var(--tier-a); border-radius: 0; }
+  .obar .fill.rep:only-child { border-radius: 4px 4px 0 0; }
+  .obar .lbl { font-family: var(--mono); font-size: 9px; color: var(--muted); white-space: nowrap; }
+  .obar .cnt { font-family: var(--mono); font-size: 10px; color: var(--ink-2); font-weight: 600; }
+  .obar.today .lbl { color: var(--accent); font-weight: 700; }
+  .orecent { list-style: none; padding: 0; margin: 0; }
+  .orecent li { display: flex; align-items: center; gap: 10px; padding: 9px 2px;
+    border-bottom: 1px solid var(--hairline-2); font-size: 13px; }
+  .orecent li:last-child { border-bottom: 0; }
+  .orecent .co { font-weight: 600; }
+  .orecent .to { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .orecent .when { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .orecent .rep { color: var(--tier-a); font-weight: 600; font-size: 11px; }
+  .orecent .wait { color: var(--muted); font-size: 11px; }
+  .legend { font-family: var(--mono); font-size: 11px; color: var(--muted); display: flex; gap: 14px;
+    margin-top: 10px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px;
+    vertical-align: baseline; }
 
   /* drawer footer / danger */
   .drawer .dfoot { margin-top: auto; padding: 14px 22px; border-top: 1px solid var(--hairline);
@@ -320,6 +370,7 @@
     <button data-tab="niches">Niches</button>
     <button data-tab="niche">Research a niche <span class="tnum" id="cnt-niche">0</span></button>
     <button data-tab="companies">Research companies <span class="tnum" id="cnt-companies">0</span></button>
+    <button data-tab="outreach">Outreach <span class="tnum" id="cnt-outreach">0</span></button>
   </nav>
 
   <!-- stat rail (research tabs only) -->
@@ -392,6 +443,33 @@
     </div>
     <div class="groups" id="companies-groups"></div>
   </section>
+
+  <!-- Tab 4: Outreach -->
+  <section class="tabpane" id="pane-outreach">
+    <div id="gmail-status"></div>
+    <div class="ostats">
+      <div class="ostat accent"><div class="k">Sent today</div><div class="v" id="o-today">—</div></div>
+      <div class="ostat"><div class="k">This week</div><div class="v" id="o-week">—</div></div>
+      <div class="ostat"><div class="k">Total sent</div><div class="v" id="o-total">—</div></div>
+      <div class="ostat good"><div class="k">Replies</div><div class="v" id="o-replies">—</div></div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;align-items:baseline;gap:12px">
+        <h2>Last 14 days</h2>
+        <span class="grow" style="flex:1"></span>
+        <button class="icon-btn" id="refreshRepliesBtn" title="Check sent threads for new replies">↻ Check replies</button>
+      </div>
+      <div class="obars" id="o-bars"></div>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Sent</span><span><i style="background:var(--tier-a)"></i>Replied</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>Recent sends</h2>
+      <ul class="orecent" id="o-recent"></ul>
+    </div>
+    <p class="pane-hint">Sends and replies are tracked through your connected Gmail account. Counts are by local day.</p>
+  </section>
 </div>
 
 <!-- drawer -->
@@ -447,7 +525,7 @@ function switchTab(tab){
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
   document.querySelectorAll(".tabpane").forEach(p => p.classList.remove("on"));
   $("#pane-" + tab).classList.add("on");
-  const research = tab !== "niches";
+  const research = tab === "niche" || tab === "companies";
   $("#stats").style.display = research ? "" : "none";
   $("#filters").style.display = research ? "" : "none";
   location.hash = tab;
@@ -457,6 +535,8 @@ function switchTab(tab){
     const groups = $("#" + tab + "-groups");
     groups.parentNode.insertBefore($("#filters"), groups);
     loadStats(); loadGroups(tab);
+  } else if (tab === "outreach"){
+    loadOutreach();
   }
 }
 
@@ -474,6 +554,87 @@ async function loadStats(){
     const seg = el("span", cls[t]); seg.style.flex = n; seg.title = `Tier ${t}: ${n}`; bar.appendChild(seg);
   }
 }
+
+// --- outreach ---
+async function loadOutreach(){
+  loadGmailStatus();
+  let s;
+  try { s = await fetch("/api/outreach").then(r=>r.json()); }
+  catch { toast("Couldn't load outreach stats."); return; }
+  $("#o-today").textContent = s.sent_today;
+  $("#o-week").textContent = s.sent_week;
+  $("#o-total").textContent = s.total_sent;
+  $("#o-replies").innerHTML = s.total_replied
+    + (s.reply_rate != null ? `<small> · ${Math.round(s.reply_rate*100)}% rate</small>` : "");
+  $("#cnt-outreach").textContent = s.total_sent;
+  renderBars(s.series || []);
+  renderRecent(s.recent || []);
+}
+
+async function loadGmailStatus(){
+  const host = $("#gmail-status"); host.innerHTML = "";
+  let st; try { st = await fetch("/api/gmail/status").then(r=>r.json()); } catch { return; }
+  const b = el("div", "gmail-banner " + (st.connected ? "ok" : "off"));
+  if (st.connected){
+    b.appendChild(el("span", null, "✓ Gmail connected"));
+    b.appendChild(el("span", "who", esc(st.email || "")));
+  } else {
+    b.appendChild(el("span", null, "⚠ Gmail not connected — sending is disabled."));
+    b.appendChild(el("span", "grow"));
+    b.appendChild(el("span", "who", "Run "));
+    b.appendChild(el("code", null, "python scripts/gmail_auth.py"));
+  }
+  host.appendChild(b);
+}
+
+function renderBars(series){
+  const host = $("#o-bars"); host.innerHTML = "";
+  const max = Math.max(1, ...series.map(d => d.sent));
+  const todayISO = new Date().toLocaleDateString("en-CA");  // local YYYY-MM-DD
+  for (const d of series){
+    const bar = el("div", "obar" + (d.date === todayISO ? " today" : ""));
+    bar.appendChild(el("span", "cnt", d.sent ? String(d.sent) : ""));
+    const col = el("div", "col");
+    const h = (d.sent / max) * 100;
+    if (d.sent){
+      const replied = el("div", "fill rep"); replied.style.height = (d.replied/d.sent*h) + "%";
+      const rest = el("div", "fill"); rest.style.height = ((d.sent-d.replied)/d.sent*h) + "%";
+      col.append(rest, replied);       // sent on top, replied at the base
+    }
+    bar.appendChild(col);
+    const dt = new Date(d.date + "T00:00:00");
+    bar.appendChild(el("span", "lbl", dt.toLocaleDateString(undefined, {day:"numeric", month:"short"})));
+    host.appendChild(bar);
+  }
+}
+
+function renderRecent(recent){
+  const host = $("#o-recent"); host.innerHTML = "";
+  if (!recent.length){ host.appendChild(el("li", null, "<span class='wait'>No emails sent yet.</span>")); return; }
+  for (const r of recent){
+    const li = el("li");
+    li.appendChild(el("span", "co", esc(r.company || "—")));
+    if (r.contact_email) li.appendChild(el("span", "to", esc(r.contact_email)));
+    li.appendChild(el("span", r.replied_at ? "rep" : "wait",
+      r.replied_at ? "↩ replied" : "awaiting reply"));
+    li.appendChild(el("span", "when", (r.sent_at || "").slice(0, 10)));
+    host.appendChild(li);
+  }
+}
+
+$("#refreshRepliesBtn").onclick = async () => {
+  const btn = $("#refreshRepliesBtn"); btn.disabled = true; const was = btn.textContent;
+  btn.textContent = "Checking…";
+  try {
+    const res = await fetch("/api/outreach/refresh-replies", {method:"POST"});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    const d = await res.json();
+    toast(d.new_replies ? `${plural(d.new_replies,"new reply","new replies")} found.`
+                        : `No new replies (checked ${d.checked}).`);
+    loadOutreach();
+  } catch (e){ toast("Couldn't check replies: " + e.message); }
+  finally { btn.disabled = false; btn.textContent = was; }
+};
 
 // --- grouped results ---
 async function loadGroups(tab){
@@ -674,10 +835,21 @@ function emailSection(id, existing){
 function renderEmail(id, out, email){
   out.innerHTML = "";
   const wrap = el("div", "email-draft");
-  const bits = [];
-  if (email.generated_at) bits.push("Saved draft · " + email.generated_at.slice(0, 10));
-  if (email.language) bits.push(email.language.charAt(0).toUpperCase() + email.language.slice(1));
-  if (bits.length) wrap.appendChild(el("div", "email-saved", esc(bits.join(" · "))));
+
+  // Status line: draft origin + language, and — once sent — the send/reply state.
+  const status = el("div", "email-saved");
+  wrap.appendChild(status);
+  function drawStatus(){
+    const bits = [];
+    if (email.generated_at) bits.push("Saved draft · " + email.generated_at.slice(0, 10));
+    if (email.language) bits.push(email.language.charAt(0).toUpperCase() + email.language.slice(1));
+    status.innerHTML = esc(bits.join(" · "));
+    if (email.sent_at){
+      status.appendChild(el("span", "sent-pill", "✓ Sent " + email.sent_at.slice(0, 10)));
+      if (email.replied_at)
+        status.appendChild(el("span", "reply-pill", "↩ Replied " + email.replied_at.slice(0, 10)));
+    }
+  }
 
   let contact = email.contact;                    // updated in place by the search
   const cardHost = el("div", "contact-host");
@@ -694,15 +866,26 @@ function renderEmail(id, out, email){
     try { await navigator.clipboard.writeText(text); toast("Email copied to clipboard."); }
     catch { toast("Couldn't copy — select the text and copy manually."); }
   };
-  const send = el("button", "icon-btn primary", "✉ Open in Gmail");
-  send.onclick = () => {
+  // In-app send via the connected Gmail account. Edits in the textarea are sent
+  // as-is; the body is persisted at draft time, so we push the current text.
+  const send = el("button", "icon-btn primary", email.sent_at ? "↻ Resend" : "✉ Send");
+  send.onclick = async () => {
     if (!(contact && contact.email)){ toast("No contact address yet — use “Find contact”."); return; }
-    const q = `to=${encodeURIComponent(contact.email)}`
-      + `&su=${encodeURIComponent(email.subject||"")}`
-      + `&body=${encodeURIComponent(ta.value)}`;
-    // Gmail web compose in a browser tab. A stable window name reuses the same
-    // compose tab on repeated clicks instead of opening a new one each time.
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&tf=1&${q}`, "gmail-compose");
+    if (email.sent_at && !confirm("Already sent. Send again as a new email?")) return;
+    send.disabled = true; const was = send.textContent; send.textContent = "Sending…";
+    try {
+      // Send exactly what's in the editor (subject + edited body); the server
+      // persists these too so the sent copy is what we store.
+      const res = await fetch(`/api/prospects/${id}/send`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ subject: email.subject, body: ta.value })});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      const data = await res.json();
+      email.sent_at = data.sent_at; email.replied_at = null;
+      toast("Sent to " + contact.email);
+      drawStatus(); send.textContent = "↻ Resend";
+    } catch (e){ toast("Couldn't send: " + e.message); send.textContent = was; }
+    finally { send.disabled = !(contact && contact.email); }
   };
   actions.append(copy, send);
 
@@ -711,6 +894,7 @@ function renderEmail(id, out, email){
     cardHost.appendChild(contactCard(id, contact, c => { contact = c; drawContact(); }));
     send.disabled = !(contact && contact.email);
   }
+  drawStatus();
   drawContact();
 
   wrap.append(ta, actions);
@@ -892,6 +1076,6 @@ function pollRun(tab, runId, btn){
 }
 
 // --- boot ---
-const start = ["niches","niche","companies"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "niche";
+const start = ["niches","niche","companies","outreach"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "niche";
 switchTab(start);
 </script>
