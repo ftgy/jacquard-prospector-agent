@@ -2,15 +2,15 @@
 Gmail integration — send outreach in-app and detect replies.
 
 One Google account (yours), authorized once via scripts/gmail_auth.py, which
-writes token.json next to .env. This module only *reads* that token, refreshing
-it silently when it expires, and never runs the interactive consent flow itself —
+writes secrets/token.json. This module only *reads* that token, refreshing it
+silently when it expires, and never runs the interactive consent flow itself —
 so importing it (and the web server) never blocks on a browser.
 
 Two capabilities, matching the two OAuth scopes we ask for:
   * gmail.send     — send a plain-text email as you.
   * gmail.readonly — look at a thread to see whether someone replied.
 
-Secrets (both git-ignored, both live at the project root):
+Secrets (both git-ignored, both live in secrets/ at the project root):
   * credentials.json — the OAuth *client* downloaded from Google Cloud.
   * token.json       — your *authorization*, minted by scripts/gmail_auth.py.
 
@@ -24,11 +24,12 @@ from email.message import EmailMessage
 from email.utils import parseaddr
 from pathlib import Path
 
-# The project root (one level up from this package) — where .env already lives,
-# so the Gmail secrets sit beside it rather than inside the package.
+# Gmail secrets live together in a git-ignored secrets/ dir at the project root
+# (one level up from this package), kept out of the code and out of git.
 ROOT = Path(__file__).resolve().parent.parent
-CREDENTIALS_PATH = ROOT / "credentials.json"
-TOKEN_PATH = ROOT / "token.json"
+SECRETS_DIR = ROOT / "secrets"
+CREDENTIALS_PATH = SECRETS_DIR / "credentials.json"  # OAuth client from Google Cloud
+TOKEN_PATH = SECRETS_DIR / "token.json"              # your authorization, minted locally
 
 # Least privilege: send mail, and read threads to spot replies. Nothing else.
 # Changing this list invalidates an existing token.json — re-run gmail_auth.py.

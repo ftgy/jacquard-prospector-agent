@@ -5,6 +5,7 @@ results.json
 prospects.csv
 
 # Gmail OAuth secrets — never commit (see docs/gmail-setup.md)
+secrets/
 credentials.json
 token.json
 __pycache__/

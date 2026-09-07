@@ -31,9 +31,8 @@ def _authorize() -> None:
 
     if not gmailer.CREDENTIALS_PATH.exists():
         sys.exit(
-            f"Missing {gmailer.CREDENTIALS_PATH.name}. Download a Desktop OAuth "
-            "client from Google Cloud into the project root first — see "
-            "docs/gmail-setup.md."
+            "Missing secrets/credentials.json. Download a Desktop OAuth client "
+            "from Google Cloud and save it there first — see docs/gmail-setup.md."
         )
 
     flow = InstalledAppFlow.from_client_secrets_file(
@@ -42,6 +41,7 @@ def _authorize() -> None:
     # Opens the browser and spins up a throwaway localhost server to catch the
     # redirect. port=0 lets the OS pick a free port.
     creds = flow.run_local_server(port=0, prompt="consent")
+    gmailer.SECRETS_DIR.mkdir(parents=True, exist_ok=True)
     gmailer.TOKEN_PATH.write_text(creds.to_json())
 
     who = gmailer.account_email() or "your account"
