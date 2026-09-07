@@ -54,7 +54,8 @@ invitation to correct):
 > tenéis cubierto, quedo a vuestra disposición para otra ocasión.
 >
 > Un saludo,
-> Francisco — feina.dev
+> Francisco Narduzzi
+> feina.dev · www.linkedin.com/in/francisco-narduzzi
 
 **Rules** (hard — these override the shape if they ever conflict):
 
@@ -93,5 +94,5 @@ invitation to correct):
 - **No filler or hype.** Banned: "quick question", "just circling back", "I hope
   this email finds you well", "reaching out", fake familiarity, exclamation-mark
   hype, and AI mysticism ("agentic"). No corporate buzzwords.
-- **Plain text, nothing attached.** The website appears once, in the signature —
-  never as a URL in the body.
+- **Plain text, nothing attached.** The website and LinkedIn appear once, together
+  on the signature's contact line — never as a URL in the body.

@@ -20,7 +20,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "prospector.server:app",
         host="127.0.0.1",
-        port=8000,
+        port=8082,
         reload=True,
         reload_dirs=["prospector"],
     )

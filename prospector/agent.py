@@ -477,8 +477,8 @@ EMAIL_SCHEMA = {
         "body": {
             "type": "string",
             "description": "Plain-text email body, greeting through sign-off. End "
-                           "with the sender's name, then the website on the line "
-                           "below, as a plain signature.",
+                           "with the sender's name, then the website + LinkedIn on "
+                           "the line below, as a plain signature.",
         },
     },
     "required": ["subject", "body"],
@@ -492,6 +492,9 @@ _LANGUAGES = {"english": "English", "spanish": "Spanish"}
 # (the prospect-research agent that likely found the reader is itself the portfolio).
 SENDER_NAME = "Francisco Narduzzi"
 WEBSITE = "feina.dev"
+LINKEDIN = "linkedin.com/in/francisco-narduzzi"
+# The signature's contact line: website and LinkedIn, joined with a middot.
+SIGNATURE_LINKS = f"{WEBSITE} · {LINKEDIN}"
 
 # The studio background and the email's shape + rules are NOT inlined here — they
 # live as editable Markdown under prospector/prompts/, read at draft time so the
@@ -550,8 +553,8 @@ with; never restate it to the reader):
 {icp}
 
 End with a short valediction ("Un saludo," in Spanish) on its own line, then the \
-sender's name "{SENDER_NAME}" on the next line, then "{WEBSITE}" on the line right \
-below it, as a plain signature."""
+sender's name "{SENDER_NAME}" on the next line, then "{SIGNATURE_LINKS}" on the line \
+right below it, verbatim, as a plain signature."""
 
 
 def _email_context(record: dict) -> str:

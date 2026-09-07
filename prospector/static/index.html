@@ -689,15 +689,20 @@ function renderEmail(id, out, email){
   const actions = el("div", "email-actions");
   const copy = el("button", "icon-btn", "⧉ Copy");
   copy.onclick = async () => {
-    const text = `Subject: ${email.subject}\n\n${ta.value}`;
+    const to = contact && contact.email ? `To: ${contact.email}\n` : "";
+    const text = `${to}Subject: ${email.subject}\n\n${ta.value}`;
     try { await navigator.clipboard.writeText(text); toast("Email copied to clipboard."); }
     catch { toast("Couldn't copy — select the text and copy manually."); }
   };
-  const send = el("button", "icon-btn primary", "✉ Open in email app");
+  const send = el("button", "icon-btn primary", "✉ Open in Gmail");
   send.onclick = () => {
     if (!(contact && contact.email)){ toast("No contact address yet — use “Find contact”."); return; }
-    const q = `subject=${encodeURIComponent(email.subject||"")}&body=${encodeURIComponent(ta.value)}`;
-    window.location.href = `mailto:${encodeURIComponent(contact.email)}?${q}`;
+    const q = `to=${encodeURIComponent(contact.email)}`
+      + `&su=${encodeURIComponent(email.subject||"")}`
+      + `&body=${encodeURIComponent(ta.value)}`;
+    // Gmail web compose in a browser tab. A stable window name reuses the same
+    // compose tab on repeated clicks instead of opening a new one each time.
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&tf=1&${q}`, "gmail-compose");
   };
   actions.append(copy, send);
 
