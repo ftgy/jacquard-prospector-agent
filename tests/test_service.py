@@ -337,6 +337,37 @@ def test_start_run_async_creates_run_and_thread(monkeypatch):
     assert {r["company"] for r in db.list_prospects()} == {"Acme", "Globex"}
 
 
+def test_categorize_run_reuses_matching_category(monkeypatch):
+    """The LLM's name is find-or-created, so the same niche returns one id."""
+    monkeypatch.setattr(service, "categorize_niche",
+                        lambda client, query, existing: "Real estate agencies")
+    first = service.categorize_run(FakeClient(), "real estate in Barcelona")
+    second = service.categorize_run(FakeClient(), "estate agents in Marbella")
+    assert first is not None and first == second
+    assert db.get_category(first)["name"] == "Real estate agencies"
+
+
+def test_categorize_run_swallows_failure(monkeypatch):
+    """A categorization error never blocks a search — it just goes uncategorized."""
+    def boom(client, query, existing):
+        raise RuntimeError("model down")
+    monkeypatch.setattr(service, "categorize_niche", boom)
+    assert service.categorize_run(FakeClient(), "widgets in Vic") is None
+
+
+def test_start_run_async_discover_files_under_category(monkeypatch):
+    """A discovery run lands in the category the LLM assigns it."""
+    monkeypatch.setattr(service, "categorize_niche",
+                        lambda client, query, existing: "Recruiting agencies")
+    monkeypatch.setattr(service, "_discover_unresearched",
+                        lambda client, niche, count: [])  # short-circuit the worker
+    run_id = service.start_run_async("discover", "recruiters in Girona", 2,
+                                     client=FakeClient())
+    run = db.get_run(run_id)
+    assert run["category_id"] is not None
+    assert db.get_category(run["category_id"])["name"] == "Recruiting agencies"
+
+
 # --- Gmail outreach: send + reply tracking -----------------------------------
 
 def test_send_outreach_persists_edits_and_marks_sent(monkeypatch):

@@ -286,14 +286,35 @@ def test_niches_api_error_returns_502(client, monkeypatch):
     assert "exploded" in r.json()["detail"]
 
 
-def test_results_grouped_by_kind(client):
-    run_id = db.create_run("discover", "agencies in Girona", 1)
-    db.insert_prospect(make_record("Girona Talent"), run_id=run_id)
+def test_results_companies_grouped_by_run(client):
+    run_id = db.create_run("companies", "Acme, Globex", 2)
+    db.insert_prospect(make_record("Acme"), run_id=run_id)
     db.insert_prospect(make_record("Legacy Co"))  # ungrouped
 
+    data = client.get("/api/results/companies").json()
+    assert data["groups"][0]["run"]["query"] == "Acme, Globex"
+    assert data["groups"][0]["prospects"][0]["company"] == "Acme"
+    assert [p["company"] for p in data["ungrouped"]] == ["Legacy Co"]
+
+
+def test_results_discover_grouped_by_category(client):
+    # Two discovery runs on the same niche in different cities share a category.
+    cat = db.find_or_create_category("Recruiting agencies")
+    bcn = db.create_run("discover", "recruiting agencies in Barcelona", 1,
+                        category_id=cat["id"])
+    mrb = db.create_run("discover", "recruiting agencies in Marbella", 1,
+                        category_id=cat["id"])
+    db.insert_prospect(make_record("BCN Talent"), run_id=bcn)
+    db.insert_prospect(make_record("Marbella Hire"), run_id=mrb)
+    db.insert_prospect(make_record("Legacy Co"))  # ungrouped (no run)
+
     data = client.get("/api/results/discover").json()
-    assert data["groups"][0]["run"]["query"] == "agencies in Girona"
-    assert data["groups"][0]["prospects"][0]["company"] == "Girona Talent"
+    assert len(data["categories"]) == 1
+    group = data["categories"][0]
+    assert group["category"]["name"] == "Recruiting agencies"
+    assert len(group["runs"]) == 2                       # both searches kept
+    companies = {p["company"] for p in group["prospects"]}
+    assert companies == {"BCN Talent", "Marbella Hire"}  # folded into one list
     assert [p["company"] for p in data["ungrouped"]] == ["Legacy Co"]
 
 

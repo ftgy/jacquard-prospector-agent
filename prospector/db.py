@@ -45,11 +45,19 @@ def init_db() -> None:
     with _connect() as conn:
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS categories (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                slug        TEXT NOT NULL UNIQUE,       -- canonical match key
+                created_at  TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS runs (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 kind        TEXT NOT NULL,              -- 'discover' | 'companies'
                 query       TEXT NOT NULL,
                 count       INTEGER,
+                category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
                 status      TEXT NOT NULL DEFAULT 'running',  -- running|done|error
                 total       INTEGER DEFAULT 0,
                 completed   INTEGER DEFAULT 0,
@@ -103,16 +111,26 @@ def init_db() -> None:
                     "gmail_thread_id", "replied_at"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT")
+        # runs.category_id was added after the first release (niche categories).
+        # Add the column before indexing it, so the index survives an upgrade of a
+        # DB whose runs table predates the column.
+        run_cols = {r["name"] for r in conn.execute("PRAGMA table_info(runs)")}
+        if "category_id" not in run_cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN category_id INTEGER "
+                         "REFERENCES categories(id) ON DELETE SET NULL")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_category "
+                     "ON runs(category_id)")
 
 
 # --- runs --------------------------------------------------------------------
 
-def create_run(kind: str, query: str, count: int | None) -> int:
+def create_run(kind: str, query: str, count: int | None,
+               category_id: int | None = None) -> int:
     with _connect() as conn:
         cur = conn.execute(
-            "INSERT INTO runs (kind, query, count, status, created_at) "
-            "VALUES (?, ?, ?, 'running', ?)",
-            (kind, query, count, _now()),
+            "INSERT INTO runs (kind, query, count, category_id, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'running', ?)",
+            (kind, query, count, category_id, _now()),
         )
         return cur.lastrowid
 
@@ -165,6 +183,111 @@ def list_runs(kind: str | None = None, limit: int = 25) -> list[dict]:
     params.append(limit)
     with _connect() as conn:
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def set_run_category(run_id: int, category_id: int | None) -> bool:
+    """Assign (or clear) a run's niche category. Returns False if no such run."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE runs SET category_id=? WHERE id=?", (category_id, run_id)
+        )
+        return cur.rowcount > 0
+
+
+# --- categories --------------------------------------------------------------
+# A category is a niche the user prospects (e.g. "Real estate agencies"),
+# location-agnostic so runs on the same business type in different cities land
+# together. Only discovery runs are categorized; the companies tab stays
+# run-grouped. The LLM proposes a category name at run launch; slugify() decides
+# when two names count as the same one.
+
+def slugify(name: str) -> str:
+    """Canonical match key for a category name (case/space/punct-insensitive)."""
+    return " ".join((name or "").lower().split())
+
+
+def find_or_create_category(name: str) -> dict:
+    """Return the category matching `name` (by slug), creating it if absent.
+
+    The slug collapses case and whitespace, so "Real Estate Agencies" and
+    "real estate  agencies" resolve to one row. Raises ValueError on a blank name.
+    """
+    name = (name or "").strip()
+    slug = slugify(name)
+    if not slug:
+        raise ValueError("category name is empty")
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM categories WHERE slug=?", (slug,)
+        ).fetchone()
+        if row:
+            return dict(row)
+        cur = conn.execute(
+            "INSERT INTO categories (name, slug, created_at) VALUES (?, ?, ?)",
+            (name, slug, _now()),
+        )
+        return {"id": cur.lastrowid, "name": name, "slug": slug,
+                "created_at": _now()}
+
+
+def get_category(category_id: int) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM categories WHERE id=?", (category_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_categories() -> list[dict]:
+    with _connect() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM categories ORDER BY name COLLATE NOCASE ASC"
+        ).fetchall()]
+
+
+def rename_category(category_id: int, name: str) -> dict | None:
+    """Rename a category. If the new name matches another category's slug, MERGE:
+    move this category's runs onto that one and delete this row.
+
+    Returns the surviving category (the merge target, or this one renamed), or
+    None if `category_id` doesn't exist. Raises ValueError on a blank name.
+    """
+    name = (name or "").strip()
+    slug = slugify(name)
+    if not slug:
+        raise ValueError("category name is empty")
+    with _connect() as conn:
+        if not conn.execute("SELECT 1 FROM categories WHERE id=?",
+                            (category_id,)).fetchone():
+            return None
+        other = conn.execute(
+            "SELECT * FROM categories WHERE slug=? AND id<>?", (slug, category_id)
+        ).fetchone()
+        if other:  # collapse this category into the existing one
+            conn.execute("UPDATE runs SET category_id=? WHERE category_id=?",
+                         (other["id"], category_id))
+            conn.execute("DELETE FROM categories WHERE id=?", (category_id,))
+            return dict(other)
+        conn.execute("UPDATE categories SET name=?, slug=? WHERE id=?",
+                     (name, slug, category_id))
+        return {"id": category_id, "name": name, "slug": slug}
+
+
+def delete_category(category_id: int) -> bool:
+    """Delete a category with every run and prospect under it. False if no such row.
+
+    Mirrors delete_run's "really discard it" semantics: the whole niche — its
+    searches and all their researched companies — goes away.
+    """
+    with _connect() as conn:
+        run_ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM runs WHERE category_id=?", (category_id,)
+        ).fetchall()]
+        for rid in run_ids:
+            conn.execute("DELETE FROM prospects WHERE run_id=?", (rid,))
+        conn.execute("DELETE FROM runs WHERE category_id=?", (category_id,))
+        cur = conn.execute("DELETE FROM categories WHERE id=?", (category_id,))
+        return cur.rowcount > 0
 
 
 # --- prospects ---------------------------------------------------------------
@@ -354,15 +477,23 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
 
 def list_prospects(tier: str | None = None, min_score: int | None = None,
                    q: str | None = None, sort: str = "fit",
-                   run_id: int | None = None, ungrouped: bool = False) -> list[dict]:
+                   run_id: int | None = None, ungrouped: bool = False,
+                   run_ids: list[int] | None = None) -> list[dict]:
     """Filtered/sorted summary list for the table. sort: 'fit' | 'recent' | 'company'.
 
-    run_id restricts to one run's prospects; ungrouped=True restricts to prospects
-    with no run (imported/legacy). The two are mutually exclusive — ungrouped wins.
+    run_id restricts to one run's prospects; run_ids to any of several (e.g. every
+    run in a niche category); ungrouped=True restricts to prospects with no run
+    (imported/legacy). They're mutually exclusive — ungrouped wins, then run_ids,
+    then run_id. An empty run_ids list matches nothing.
     """
     where, params = [], []
     if ungrouped:
         where.append("run_id IS NULL")
+    elif run_ids is not None:
+        if not run_ids:
+            return []
+        where.append(f"run_id IN ({','.join('?' * len(run_ids))})")
+        params.extend(run_ids)
     elif run_id is not None:
         where.append("run_id = ?")
         params.append(run_id)
@@ -558,6 +689,50 @@ def grouped_results(kind: str) -> dict:
     runs = list_runs(kind=kind, limit=200)
     groups = [{"run": r, "prospects": list_prospects(run_id=r["id"])} for r in runs]
     return {"groups": groups, "ungrouped": list_prospects(ungrouped=True)}
+
+
+def categorized_results() -> dict:
+    """Discovery prospects grouped by niche category, for the "Research a niche" tab.
+
+    Returns {"categories": [{"category": {...}, "runs": [...], "prospects": [...]},
+             ...],                       # most recently active category first
+             "uncategorized": {"runs": [...], "prospects": [...]},  # discover runs
+                                          # with no category yet (should be rare)
+             "ungrouped": [...]}          # prospects with no run (imported/legacy)
+
+    Each category folds together every discovery run assigned to it (across cities)
+    into one flat, fit-sorted prospect list; `runs` is kept so the UI can still show
+    per-search progress and let a single search be deleted or re-filed.
+    """
+    runs = list_runs(kind="discover", limit=1000)
+    by_cat: dict[int | None, list[dict]] = {}
+    for r in runs:
+        by_cat.setdefault(r["category_id"], []).append(r)
+
+    categories = []
+    for cat in list_categories():
+        cat_runs = by_cat.get(cat["id"], [])
+        if not cat_runs:
+            continue  # empty category (all its runs deleted) — hide it
+        run_ids = [r["id"] for r in cat_runs]
+        categories.append({
+            "category": cat,
+            "runs": cat_runs,
+            "prospects": list_prospects(run_ids=run_ids),
+        })
+    # Newest activity first: order by the highest run id the category holds.
+    categories.sort(key=lambda c: max(r["id"] for r in c["runs"]), reverse=True)
+
+    unc_runs = by_cat.get(None, [])
+    unc_ids = [r["id"] for r in unc_runs]
+    return {
+        "categories": categories,
+        "uncategorized": {
+            "runs": unc_runs,
+            "prospects": list_prospects(run_ids=unc_ids) if unc_ids else [],
+        },
+        "ungrouped": list_prospects(ungrouped=True),
+    }
 
 
 def stats() -> dict:

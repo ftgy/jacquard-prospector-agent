@@ -313,6 +313,55 @@ def suggest_niches(client: anthropic.Anthropic, location: str, icp: str,
     return result.get("niches", [])
 
 
+# --- Niche categorization ----------------------------------------------------
+
+CATEGORIZE_SYSTEM = """You file a prospecting search under a niche CATEGORY — the \
+kind of business it targets, with the location stripped out. The goal is that \
+searches for the same business type in different places land in one category: \
+"real estate agencies in Barcelona" and "estate agents in Marbella" are both \
+"Real estate agencies".
+
+Rules:
+- The category names the business type/industry only. Never include a city, \
+region, or country.
+- If one of the existing categories already fits (the same or clearly the same \
+kind of business), return it VERBATIM — copy the exact string. Small wording or \
+plural differences don't matter; reuse the existing one.
+- Only invent a new category when none of the existing ones genuinely fit.
+- Keep new names short, plural, Title Case, no location (2-4 words), e.g. \
+"Boutique law firms", "Independent recruiting agencies", "Dental clinics"."""
+
+CATEGORIZE_SCHEMA = {
+    "type": "object",
+    "properties": {"category": {"type": "string"}},
+    "required": ["category"],
+    "additionalProperties": False,
+}
+
+
+def categorize_niche(client: anthropic.Anthropic, query: str,
+                     existing: list[str]) -> str:
+    """Map a discovery query to a location-agnostic niche category name.
+
+    Returns one of `existing` verbatim when the niche fits it, otherwise a fresh
+    short name. A reasoning pass with no web search — cheap and fast, like
+    suggest_niches. `existing` is the current category names, to bias reuse so
+    the same business type across cities collapses into one category.
+    """
+    listing = ("\n".join(f"- {c}" for c in existing)
+               if existing else "(none yet — this is the first category)")
+    result = _structure(
+        client,
+        CATEGORIZE_SYSTEM,
+        f"Existing categories:\n{listing}\n\n"
+        f"Search to file: {query!r}\n\n"
+        "Return the category it belongs to.",
+        CATEGORIZE_SCHEMA,
+        max_tokens=1500,
+    )
+    return (result.get("category") or "").strip()
+
+
 # --- Stage 1: research -------------------------------------------------------
 
 RESEARCH_SYSTEM = """You are a sharp B2B prospect researcher. Given a company, \

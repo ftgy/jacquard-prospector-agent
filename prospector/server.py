@@ -62,6 +62,17 @@ class NotesRequest(BaseModel):
     notes: str = Field("", max_length=5000)
 
 
+class CategoryRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+
+
+class RunCategoryRequest(BaseModel):
+    # Refile a run: give an existing category_id (null un-files), or a name to
+    # find/create. `name` wins when both are present.
+    category_id: int | None = None
+    name: str | None = Field(None, max_length=120)
+
+
 class EmailRequest(BaseModel):
     # Omitted / null -> follow the global config.OUTPUT_LANGUAGE.
     language: str | None = Field(None, pattern="^(english|spanish)$")
@@ -201,10 +212,62 @@ def api_stats():
 
 @app.get("/api/results/{kind}")
 def api_results(kind: str):
-    """Prospects grouped by the query (run) that produced them, for one kind."""
-    if kind not in ("discover", "companies"):
-        raise HTTPException(404, "unknown kind")
-    return db.grouped_results(kind)
+    """Results for one kind. Discovery groups by niche category (across runs);
+    companies stays grouped by the query (run) that produced them."""
+    if kind == "discover":
+        return db.categorized_results()
+    if kind == "companies":
+        return db.grouped_results(kind)
+    raise HTTPException(404, "unknown kind")
+
+
+# --- categories --------------------------------------------------------------
+
+@app.get("/api/categories")
+def api_categories():
+    """All niche categories — backs the 'move to category' picker."""
+    return db.list_categories()
+
+
+@app.put("/api/categories/{category_id}")
+def api_rename_category(category_id: int, req: CategoryRequest):
+    """Rename a category; renaming onto an existing name merges the two."""
+    try:
+        cat = db.rename_category(category_id, req.name)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if cat is None:
+        raise HTTPException(404, "category not found")
+    return cat
+
+
+@app.delete("/api/categories/{category_id}")
+def api_delete_category(category_id: int):
+    """Delete a category with every search and prospect filed under it."""
+    if not db.delete_category(category_id):
+        raise HTTPException(404, "category not found")
+    return {"deleted": category_id}
+
+
+@app.put("/api/runs/{run_id}/category")
+def api_set_run_category(run_id: int, req: RunCategoryRequest):
+    """Refile one search under a different category (by id, or a new name).
+
+    Backs fixing a miscategorized search and manual merges. Body carries either
+    category_id (an existing category, or null to un-file) or name (find/create).
+    """
+    if req.name is not None and req.name.strip():
+        try:
+            category_id = db.find_or_create_category(req.name)["id"]
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    else:
+        category_id = req.category_id
+        if category_id is not None and db.get_category(category_id) is None:
+            raise HTTPException(404, "category not found")
+    if not db.set_run_category(run_id, category_id):
+        raise HTTPException(404, "run not found")
+    return {"id": run_id, "category_id": category_id}
 
 
 # --- runs --------------------------------------------------------------------

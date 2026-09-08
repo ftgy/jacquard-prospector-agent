@@ -41,7 +41,7 @@ from prospector import db
 from prospector.agent import discover_candidates, run_prospect, suggest_niches
 from prospector.config import make_client
 from prospector.icp import ICP
-from prospector.service import friendly_api_error
+from prospector.service import categorize_run, friendly_api_error
 
 log = logging.getLogger("populate")
 
@@ -168,8 +168,11 @@ def run_once(location: str, count: int, forced_niche: str | None,
             log.info("  [dry-run] would research: %s", c["company"])
         return 0
 
-    # 4. Research + qualify, grouped under a run so the dashboard shows it.
-    run_id = db.create_run("discover", niche, count)
+    # 4. Research + qualify, grouped under a run so the dashboard shows it. File
+    #    the run under a niche category (best-effort) so the dashboard groups these
+    #    unattended runs by niche just like the ones launched from the browser.
+    category_id = categorize_run(client, niche)
+    run_id = db.create_run("discover", niche, count, category_id=category_id)
     db.set_run_total(run_id, len(new))
     try:
         counts = research_batch(client, run_id, new)

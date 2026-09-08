@@ -1,5 +1,7 @@
 """Persistence layer: schema, prospect CRUD, filtering/sorting, stats, runs."""
 
+import pytest
+
 from prospector import db
 from tests.conftest import make_record
 
@@ -378,3 +380,98 @@ def test_filter_unresearched_matches_name_or_domain_and_dedups_batch():
     ]
     kept = db.filter_unresearched(incoming)
     assert [k["company"] for k in kept] == ["Globex"]
+
+
+# --- categories --------------------------------------------------------------
+
+def test_find_or_create_category_dedups_by_slug():
+    a = db.find_or_create_category("Real Estate Agencies")
+    b = db.find_or_create_category("real estate  agencies")  # case/space differ
+    assert a["id"] == b["id"]                                # one row
+    assert db.find_or_create_category("Dental clinics")["id"] != a["id"]
+
+
+def test_find_or_create_category_rejects_blank():
+    with pytest.raises(ValueError):
+        db.find_or_create_category("   ")
+
+
+def test_set_run_category_and_list():
+    cat = db.find_or_create_category("Recruiting agencies")
+    rid = db.create_run("discover", "recruiters in Girona", 2)
+    assert db.get_run(rid)["category_id"] is None
+    assert db.set_run_category(rid, cat["id"]) is True
+    assert db.get_run(rid)["category_id"] == cat["id"]
+    assert [c["name"] for c in db.list_categories()] == ["Recruiting agencies"]
+
+
+def test_rename_category_plain():
+    cat = db.find_or_create_category("Recruters")  # typo
+    out = db.rename_category(cat["id"], "Recruiting agencies")
+    assert out["name"] == "Recruiting agencies"
+    assert db.get_category(cat["id"])["name"] == "Recruiting agencies"
+
+
+def test_rename_category_onto_existing_name_merges():
+    keep = db.find_or_create_category("Recruiting agencies")
+    dupe = db.find_or_create_category("Staffing firms")
+    rid = db.create_run("discover", "staffing in Reus", 1, category_id=dupe["id"])
+
+    out = db.rename_category(dupe["id"], "recruiting agencies")  # same slug as keep
+    assert out["id"] == keep["id"]                       # merged into the survivor
+    assert db.get_category(dupe["id"]) is None           # the dupe is gone
+    assert db.get_run(rid)["category_id"] == keep["id"]  # its run moved over
+
+
+def test_delete_category_cascades_runs_and_prospects():
+    cat = db.find_or_create_category("Law firms")
+    rid = db.create_run("discover", "law firms in VLC", 1, category_id=cat["id"])
+    pid = db.insert_prospect(make_record("Lex"), run_id=rid)
+    loose = db.insert_prospect(make_record("Loose"))  # unrelated, no run
+
+    assert db.delete_category(cat["id"]) is True
+    assert db.get_category(cat["id"]) is None
+    assert db.get_run(rid) is None
+    assert db.get_prospect(pid) is None
+    assert db.get_prospect(loose) is not None           # untouched
+    assert db.delete_category(cat["id"]) is False        # already gone
+
+
+def test_list_prospects_by_run_ids():
+    r1 = db.create_run("discover", "n1", 1)
+    r2 = db.create_run("discover", "n2", 1)
+    db.insert_prospect(make_record("A", fit=50), run_id=r1)
+    db.insert_prospect(make_record("B", fit=90), run_id=r2)
+    db.insert_prospect(make_record("Loose"))  # no run
+    got = [p["company"] for p in db.list_prospects(run_ids=[r1, r2])]
+    assert got == ["B", "A"]                    # both runs, fit-sorted
+    assert db.list_prospects(run_ids=[]) == []  # empty set matches nothing
+
+
+def test_categorized_results_folds_runs_and_keeps_ungrouped():
+    cat = db.find_or_create_category("Recruiting agencies")
+    bcn = db.create_run("discover", "recruiters in Barcelona", 1, category_id=cat["id"])
+    mrb = db.create_run("discover", "recruiters in Marbella", 1, category_id=cat["id"])
+    db.insert_prospect(make_record("BCN Talent", fit=70), run_id=bcn)
+    db.insert_prospect(make_record("Marbella Hire", fit=90), run_id=mrb)
+    db.insert_prospect(make_record("Imported"))  # ungrouped (no run)
+
+    data = db.categorized_results()
+    assert len(data["categories"]) == 1
+    group = data["categories"][0]
+    assert group["category"]["id"] == cat["id"]
+    assert len(group["runs"]) == 2
+    # both searches' companies fold into one fit-sorted list
+    assert [p["company"] for p in group["prospects"]] == ["Marbella Hire", "BCN Talent"]
+    assert [p["company"] for p in data["ungrouped"]] == ["Imported"]
+
+
+def test_categorized_results_hides_empty_categories_and_buckets_uncategorized():
+    db.find_or_create_category("Empty niche")  # no runs -> hidden
+    rid = db.create_run("discover", "widgets in Vic", 1)  # discover, no category
+    db.insert_prospect(make_record("Widgetco"), run_id=rid)
+
+    data = db.categorized_results()
+    assert data["categories"] == []
+    assert [r["id"] for r in data["uncategorized"]["runs"]] == [rid]
+    assert [p["company"] for p in data["uncategorized"]["prospects"]] == ["Widgetco"]

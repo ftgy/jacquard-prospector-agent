@@ -170,6 +170,25 @@
   .group-prog i { display: block; height: 100%; background: var(--accent); transition: width .4s ease; }
   .group-note { padding: 18px 16px; color: var(--muted); font-size: 13px; }
   .group-note.err { color: var(--tier-d); font-family: var(--mono); font-size: 12.5px; }
+  .cat-name { cursor: pointer; }
+  .cat-name:hover { color: var(--accent-ink); text-decoration: underline dotted; text-underline-offset: 3px; }
+
+  /* the searches that fed a niche category */
+  .cat-runs { display: flex; flex-wrap: wrap; gap: 7px; padding: 12px 16px;
+              border-bottom: 1px solid var(--hairline-2); }
+  .cat-run { display: inline-flex; align-items: center; gap: 8px; max-width: 100%;
+             background: var(--surface-2); border: 1px solid var(--hairline);
+             border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 12px; }
+  .cat-run.running { border-color: color-mix(in srgb, var(--accent) 45%, var(--hairline)); }
+  .cat-run.failed { border-color: color-mix(in srgb, var(--tier-d) 40%, var(--hairline)); }
+  .cat-run .cr-q { font-weight: 550; letter-spacing: -.01em; max-width: 340px;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cat-run .cr-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .cat-run.running .cr-meta { color: var(--accent-ink); }
+  .cat-run.failed .cr-meta { color: var(--tier-d); }
+  .cat-run .cr-del { background: none; border: 0; color: var(--muted); cursor: pointer;
+                     font-size: 12px; line-height: 1; padding: 3px 5px; border-radius: 999px; }
+  .cat-run .cr-del:hover { color: var(--tier-d); background: color-mix(in srgb, var(--tier-d) 12%, transparent); }
 
   .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; min-width: 640px; }
@@ -645,15 +664,14 @@ async function loadGroups(tab){
 }
 
 function updateTabCounts(){
-  const count = tab => {
-    const d = cache[tab]; if (!d) return null;
-    let n = d.groups.reduce((a,g)=>a+g.prospects.length, 0);
-    if (tab === "niche") n += d.ungrouped.length;
-    return n;
-  };
-  const cn = count("niche"), cc = count("companies");
-  if (cn != null) $("#cnt-niche").textContent = cn;
-  if (cc != null) $("#cnt-companies").textContent = cc;
+  const dn = cache.niche;
+  if (dn){
+    let n = (dn.categories || []).reduce((a,c)=>a+c.prospects.length, 0);
+    n += (dn.uncategorized?.prospects.length || 0) + (dn.ungrouped?.length || 0);
+    $("#cnt-niche").textContent = n;
+  }
+  const dc = cache.companies;
+  if (dc) $("#cnt-companies").textContent = dc.groups.reduce((a,g)=>a+g.prospects.length, 0);
 }
 
 function filterProspects(list){
@@ -668,17 +686,126 @@ function filterProspects(list){
 function renderGroups(tab){
   const container = $("#" + tab + "-groups");
   const data = cache[tab]; container.innerHTML = "";
-  const groups = data ? data.groups : [];
-  const ungrouped = (tab === "niche" && data) ? data.ungrouped : [];
+  if (tab === "niche") return renderNicheGroups(container, data);
 
-  if (!groups.length && !ungrouped.length){
-    container.appendChild(el("div", "empty", tab === "niche"
-      ? "<b>No niche research yet.</b><br>Run a niche above, or get ideas in the <b>Niches</b> tab."
-      : "<b>No company research yet.</b><br>Add company names above to research them."));
+  // companies: still grouped by the run (query) that named them.
+  const groups = data ? data.groups : [];
+  if (!groups.length){
+    container.appendChild(el("div", "empty",
+      "<b>No company research yet.</b><br>Add company names above to research them."));
     return;
   }
   for (const g of groups) container.appendChild(groupCard(tab, g.run, g.prospects));
-  for (const _ of [0]) if (ungrouped.length) container.appendChild(groupCard(tab, null, ungrouped, true));
+}
+
+// The niche tab groups by category: every search on a niche (across cities) folds
+// into one list, with a strip of the searches that fed it kept for progress/delete.
+function renderNicheGroups(container, data){
+  const cats = data ? data.categories : [];
+  const unc = data ? data.uncategorized : {runs:[], prospects:[]};
+  const ungrouped = data ? data.ungrouped : [];
+  if (!cats.length && !unc.runs.length && !ungrouped.length){
+    container.appendChild(el("div", "empty",
+      "<b>No niche research yet.</b><br>Run a niche above, or get ideas in the <b>Niches</b> tab."));
+    return;
+  }
+  for (const c of cats) container.appendChild(nicheCard(c.category, c.runs, c.prospects));
+  if (unc.runs.length) container.appendChild(nicheCard(null, unc.runs, unc.prospects));
+  if (ungrouped.length) container.appendChild(groupCard("niche", null, ungrouped, true));
+}
+
+const newestDate = runs => runs.reduce((m, r) => r.created_at > m ? r.created_at : m, "").slice(0, 10);
+
+function nicheCard(cat, runs, prospects){
+  const card = el("div", "group");
+  const filtered = filterProspects(prospects);
+  const anyRunning = runs.some(r => r.status === "running");
+  const isUnc = !cat;   // discovery searches not yet filed under a category
+  const meta = `${plural(prospects.length, "company", "companies")} · `
+             + plural(runs.length, "search", "searches");
+  const date = newestDate(runs);
+
+  const head = el("div", "group-head", `
+    <button class="group-toggle" aria-label="Collapse">▾</button>
+    <span class="kind-badge ${isUnc ? "imported" : ""}">${isUnc ? "uncategorized" : "niche"}</span>
+    <span class="group-query${isUnc ? "" : " cat-name"}" ${isUnc ? "" : 'title="Rename niche"'}>${esc(isUnc ? "Uncategorized" : cat.name)}</span>
+    <span class="group-meta">${esc(meta)}${date ? ` · ${date}` : ""}</span>`);
+  if (!isUnc){
+    head.querySelector(".cat-name").onclick = e => { e.stopPropagation(); renameCategory(cat); };
+    const del = el("button", "group-del", "🗑");
+    del.title = "Delete this niche and all its companies";
+    del.setAttribute("aria-label", "Delete niche");
+    del.onclick = e => { e.stopPropagation(); deleteCategory(cat, prospects.length); };
+    head.appendChild(del);
+  }
+  card.appendChild(head);
+
+  const body = el("div", "group-body");
+  body.appendChild(runStrip(runs));
+  if (!filtered.length){
+    body.appendChild(el("div", "group-note", prospects.length
+      ? "No companies in this niche match the current filters."
+      : (anyRunning ? "Researching… companies appear here as each finishes."
+                    : "No companies yet.")));
+  } else {
+    const scroll = el("div", "scroll"), table = el("table"), tb = el("tbody");
+    for (const r of filtered) tb.appendChild(prospectRow(r));
+    table.appendChild(tb); scroll.appendChild(table); body.appendChild(scroll);
+  }
+  card.appendChild(body);
+
+  head.querySelector(".group-toggle").onclick = e => { e.stopPropagation(); card.classList.toggle("collapsed"); };
+  return card;
+}
+
+// The searches that fed a niche: one chip each, with live progress or its date,
+// and a ✕ to delete that single search (and only its companies).
+function runStrip(runs){
+  const strip = el("div", "cat-runs");
+  for (const run of [...runs].sort((a,b)=>b.id-a.id)){
+    const running = run.status === "running", failed = run.status === "error";
+    const chip = el("div", "cat-run" + (running ? " running" : "") + (failed ? " failed" : ""));
+    if (failed && run.error) chip.title = run.error;
+    chip.appendChild(el("span", "cr-q", esc(run.query)));
+    const total = run.total || 0, done = run.completed || 0;
+    chip.appendChild(el("span", "cr-meta",
+      running ? (total ? `${done}/${total}` : "discovering…")
+              : (failed ? "failed" : (run.created_at || "").slice(0, 10))));
+    if (!running){
+      const x = el("button", "cr-del", "✕");
+      x.title = "Delete this search and its companies";
+      x.onclick = e => { e.stopPropagation(); deleteRun("niche", run, null); };
+      chip.appendChild(x);
+    }
+    strip.appendChild(chip);
+  }
+  return strip;
+}
+
+async function renameCategory(cat){
+  const name = prompt("Rename niche — naming it the same as another niche merges them:", cat.name);
+  if (name == null) return;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === cat.name) return;
+  try {
+    const res = await fetch("/api/categories/" + cat.id, {method:"PUT",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({name: trimmed})});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    toast("Niche renamed.");
+    loadGroups("niche");
+  } catch (e){ toast("Couldn't rename niche: " + e.message); }
+}
+
+async function deleteCategory(cat, count){
+  const what = count ? `and all ${plural(count, "company", "companies")}` : "and its searches";
+  if (!confirm(`Delete the niche “${cat.name}” ${what}? This can't be undone.`)) return;
+  clearInterval(polls.niche);   // a search here may still be updating
+  try {
+    const res = await fetch("/api/categories/" + cat.id, {method:"DELETE"});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    toast("Niche deleted.");
+    loadStats(); loadGroups("niche");
+  } catch (e){ toast("Couldn't delete niche: " + e.message); }
 }
 
 function groupCard(tab, run, prospects, isUngrouped){
@@ -1062,15 +1189,27 @@ async function startRun(tab, o){
   } catch (e){ toast("Couldn't start run: " + e.message); o.btn.disabled = false; }
 }
 
+// Find a run by id in either tab's payload — companies group by run, niche by
+// category (runs live inside categories, plus the uncategorized bucket).
+function findRunById(tab, id){
+  const d = cache[tab]; if (!d) return null;
+  if (tab === "niche"){
+    for (const c of d.categories || []){ const r = c.runs.find(r => r.id === id); if (r) return r; }
+    return (d.uncategorized?.runs || []).find(r => r.id === id) || null;
+  }
+  const g = (d.groups || []).find(g => g.run && g.run.id === id);
+  return g ? g.run : null;
+}
+
 function pollRun(tab, runId, btn){
   clearInterval(polls[tab]);
   polls[tab] = setInterval(async () => {
     await loadGroups(tab);
     if (state.tab === tab) loadStats();
-    const g = (cache[tab].groups || []).find(g => g.run && g.run.id === runId);
-    if (!g || g.run.status === "running") return;
+    const run = findRunById(tab, runId);
+    if (!run || run.status === "running") return;
     clearInterval(polls[tab]); btn.disabled = false;
-    toast(g.run.status === "error" ? (g.run.error || "Run failed") : "Run complete.");
+    toast(run.status === "error" ? (run.error || "Run failed") : "Run complete.");
     loadStats();
   }, 2500);
 }

@@ -16,6 +16,7 @@ import anthropic
 
 from . import db, gmailer
 from .agent import (
+    categorize_niche,
     discover_candidates,
     draft_outreach_email,
     find_contact,
@@ -149,15 +150,34 @@ def _execute_run(client: anthropic.Anthropic, run_id: int, kind: str,
         db.finish_run(run_id, "error", friendly_api_error(e))
 
 
+def categorize_run(client: anthropic.Anthropic, query: str) -> int | None:
+    """Resolve a discovery query to a niche category id, creating one if needed.
+
+    Best-effort: a categorization hiccup returns None (the run just starts
+    uncategorized and can be filed later) rather than blocking the search. Only
+    discovery runs are categorized — the companies tab stays run-grouped.
+    """
+    try:
+        existing = [c["name"] for c in db.list_categories()]
+        name = categorize_niche(client, query, existing)
+        if not name:
+            return None
+        return db.find_or_create_category(name)["id"]
+    except Exception:
+        return None
+
+
 def start_run_async(kind: str, query: str, count: int = 10, thorough: bool = False,
                     client: anthropic.Anthropic | None = None) -> int:
     """Create a run row and launch it on a daemon thread. Returns the run id
     immediately so the caller (HTTP handler) can respond and the frontend can poll
-    GET /api/runs/{id} for progress."""
+    GET /api/runs/{id} for progress. Discovery runs are filed under a niche
+    category first (a quick reasoning call) so results group by niche, not run."""
     if kind not in ("discover", "companies"):
         raise ValueError(f"unknown run kind: {kind!r}")
     client = client or make_client()
-    run_id = db.create_run(kind, query, count)
+    category_id = categorize_run(client, query) if kind == "discover" else None
+    run_id = db.create_run(kind, query, count, category_id=category_id)
     threading.Thread(
         target=_execute_run,
         args=(client, run_id, kind, query, count, thorough),

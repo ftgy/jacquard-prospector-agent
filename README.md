@@ -96,8 +96,14 @@ The dashboard has four tabs:
 
 - **Niches** — type a city, get clickable niche suggestions; picking one loads it
   into the next tab.
-- **Research a niche** — run discovery on a niche. Results are grouped under the
-  query that produced them, so you can see which niche each prospect came from.
+- **Research a niche** — run discovery on a niche. Results are grouped by **niche
+  category**, not by individual search: each run is auto-filed under a
+  location-agnostic category (so "real estate agencies in Barcelona" and
+  "...in Marbella" fold into one *Real estate agencies* list), letting you focus a
+  whole niche at once. The searches that fed a category are shown as chips you can
+  delete individually; the category name is click-to-rename (renaming onto an
+  existing name merges the two). Runs from before this feature can be backfilled
+  with `python scripts/categorize_runs.py`.
 - **Research companies** — qualify specific named companies, likewise grouped by
   the query. Unlike discovery, this tab does **not** skip companies you already
   have — naming one re-researches it, and the fresh record is kept alongside the
