@@ -101,6 +101,25 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_prospects_run ON prospects(run_id);
             CREATE INDEX IF NOT EXISTS idx_prospects_score ON prospects(fit_score);
+
+            -- One row per outreach email actually sent, kept forever so a
+            -- company's full contact history survives resends. The prospects
+            -- row still caches the *latest* send (sent_at / gmail_* / replied_at)
+            -- for fast list rendering; this table is the audit trail.
+            CREATE TABLE IF NOT EXISTS sends (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                prospect_id      INTEGER NOT NULL
+                                 REFERENCES prospects(id) ON DELETE CASCADE,
+                subject          TEXT,           -- snapshot of what went out
+                body             TEXT,
+                contact_email    TEXT,           -- where it was sent
+                gmail_message_id TEXT,
+                gmail_thread_id  TEXT,
+                sent_at          TEXT NOT NULL,
+                replied_at       TEXT            -- when a reply hit this thread
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_sends_prospect ON sends(prospect_id);
             """
         )
         # Migrate DBs created before newer columns existed.
@@ -120,6 +139,19 @@ def init_db() -> None:
                          "REFERENCES categories(id) ON DELETE SET NULL")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_category "
                      "ON runs(category_id)")
+
+        # Backfill the sends history from the last-send columns cached on each
+        # prospect, so DBs that sent mail before the sends table existed keep
+        # that history. Runs only while sends is empty, so it can't duplicate.
+        already = conn.execute("SELECT COUNT(*) FROM sends").fetchone()[0]
+        if not already:
+            conn.execute(
+                "INSERT INTO sends (prospect_id, subject, body, contact_email, "
+                "gmail_message_id, gmail_thread_id, sent_at, replied_at) "
+                "SELECT id, email_subject, email_body, contact_email, "
+                "gmail_message_id, gmail_thread_id, sent_at, replied_at "
+                "FROM prospects WHERE sent_at IS NOT NULL"
+            )
 
 
 # --- runs --------------------------------------------------------------------
@@ -459,6 +491,10 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
         "outreach_angle": row["outreach_angle"],
         "error": row["error"],
         "created_at": row["created_at"],
+        # Last-contacted state, cheap enough to include in list rows so the
+        # tables can flag which companies have already been emailed.
+        "sent_at": row["sent_at"],
+        "replied_at": row["replied_at"],
     }
     if full:
         rec["notes"] = row["notes"]
@@ -528,7 +564,11 @@ def get_prospect(prospect_id: int) -> dict | None:
         row = conn.execute(
             "SELECT * FROM prospects WHERE id=?", (prospect_id,)
         ).fetchone()
-        return row_to_record(row, full=True) if row else None
+    if not row:
+        return None
+    rec = row_to_record(row, full=True)
+    rec["sends"] = list_sends(prospect_id)   # full outreach history, newest first
+    return rec
 
 
 def delete_prospect(prospect_id: int) -> bool:
@@ -574,30 +614,69 @@ def set_prospect_contact(prospect_id: int, email: str, phone: str | None = None,
             "source": source, "found_at": ts}
 
 
-def mark_sent(prospect_id: int, message_id: str, thread_id: str) -> bool:
+def mark_sent(prospect_id: int, message_id: str, thread_id: str,
+              subject: str | None = None, body: str | None = None,
+              contact_email: str | None = None) -> bool:
     """Record that the outreach email was sent via Gmail, with its ids.
 
-    Stores sent_at (now) and the Gmail message/thread ids so the thread can be
-    polled later for a reply. Clears any prior replied_at, since this is a fresh
-    send. Returns False if there's no such prospect.
+    Appends a row to the sends history (snapshotting the subject/body/address
+    that went out) and refreshes the last-send cache on the prospect: sent_at
+    (now), the Gmail message/thread ids, and replied_at cleared since this is a
+    fresh send. Returns False if there's no such prospect.
     """
+    ts = _now()
     with _connect() as conn:
         cur = conn.execute(
             "UPDATE prospects SET sent_at=?, gmail_message_id=?, "
             "gmail_thread_id=?, replied_at=NULL WHERE id=?",
-            (_now(), message_id, thread_id, prospect_id),
+            (ts, message_id, thread_id, prospect_id),
         )
-        return cur.rowcount > 0
+        if cur.rowcount == 0:
+            return False
+        conn.execute(
+            "INSERT INTO sends (prospect_id, subject, body, contact_email, "
+            "gmail_message_id, gmail_thread_id, sent_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (prospect_id, subject, body, contact_email, message_id, thread_id, ts),
+        )
+        return True
 
 
 def mark_replied(prospect_id: int, replied_at: str) -> bool:
-    """Record when a reply was first detected on a sent prospect's thread."""
+    """Record when a reply was first detected on a sent prospect's thread.
+
+    Stamps both the last-send cache on the prospect and the matching history
+    row (the latest unanswered send), so the timeline shows which email drew
+    the reply.
+    """
     with _connect() as conn:
         cur = conn.execute(
             "UPDATE prospects SET replied_at=? WHERE id=?",
             (replied_at, prospect_id),
         )
+        conn.execute(
+            "UPDATE sends SET replied_at=? WHERE id=("
+            "  SELECT id FROM sends WHERE prospect_id=? AND replied_at IS NULL "
+            "  ORDER BY id DESC LIMIT 1)",
+            (replied_at, prospect_id),
+        )
         return cur.rowcount > 0
+
+
+def list_sends(prospect_id: int) -> list[dict]:
+    """A prospect's outreach history, most recent send first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT subject, body, contact_email, sent_at, replied_at "
+            "FROM sends WHERE prospect_id=? ORDER BY id DESC",
+            (prospect_id,),
+        ).fetchall()
+    return [
+        {"subject": r["subject"], "body": r["body"],
+         "contact_email": r["contact_email"], "sent_at": r["sent_at"],
+         "replied_at": r["replied_at"]}
+        for r in rows
+    ]
 
 
 def sent_awaiting_reply() -> list[dict]:

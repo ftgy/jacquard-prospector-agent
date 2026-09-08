@@ -309,6 +309,36 @@
   .email-saved .reply-pill { color: var(--accent-ink);
     background: color-mix(in srgb, var(--accent) 16%, transparent); }
 
+  /* Last-contacted flag on a list row, next to the company name. */
+  td.co .cbadge { display: inline-block; margin-left: 8px; vertical-align: 1px;
+    padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
+    font-family: var(--mono); letter-spacing: .01em; }
+  td.co .cbadge.sent { color: var(--tier-a);
+    background: color-mix(in srgb, var(--tier-a) 14%, transparent); }
+  td.co .cbadge.replied { color: var(--accent-ink);
+    background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+  /* Outreach history timeline in the detail drawer. */
+  .send-hist { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .send-hist > .hh { font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+  .send-hist .sh { border-bottom: 1px solid var(--border); }
+  .send-hist .sh:last-child { border-bottom: 0; }
+  .send-hist .sh-head { display: flex; align-items: center; gap: 8px; padding: 7px 2px;
+    cursor: pointer; }
+  .send-hist .sh-head .date { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+  .send-hist .sh-head .to { font-family: var(--mono); font-size: 11px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .send-hist .sh-head .rep { margin-left: auto; font-size: 11px; font-weight: 600;
+    color: var(--accent-ink); white-space: nowrap; }
+  .send-hist .sh-head .wait { margin-left: auto; font-size: 11px; color: var(--muted);
+    white-space: nowrap; }
+  .send-hist .sh-head .caret { color: var(--muted); font-size: 10px; width: 10px; }
+  .send-hist .sh-body { padding: 0 2px 10px 20px; }
+  .send-hist .sh-body .subj { font-weight: 600; font-size: 12.5px; margin-bottom: 4px; }
+  .send-hist .sh-body .snap { white-space: pre-wrap; font-size: 12px; color: var(--ink-2);
+    background: var(--surface-2); border-radius: 6px; padding: 8px 10px; }
+
   /* outreach tab */
   .gmail-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
     padding: 11px 14px; border-radius: 10px; margin-bottom: 16px; border: 1px solid var(--hairline); }
@@ -873,12 +903,30 @@ async function deleteRun(tab, run, count){
   } catch (e){ toast("Couldn't delete search: " + e.message); }
 }
 
+// "3d", "yesterday", "today", or a short date for older sends.
+function relTime(iso){
+  if (!iso) return "";
+  const then = new Date(iso), now = new Date();
+  const days = Math.floor((now - then) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return days + "d ago";
+  return then.toLocaleDateString(undefined, {day:"numeric", month:"short"});
+}
+
+// Last-contacted flag for a list row, or "" if never emailed.
+function contactBadge(r){
+  if (r.replied_at) return `<span class="cbadge replied" title="Replied ${esc(r.replied_at.slice(0,10))}">↩ replied</span>`;
+  if (r.sent_at) return `<span class="cbadge sent" title="Sent ${esc(r.sent_at.slice(0,10))}">✉ ${esc(relTime(r.sent_at))}</span>`;
+  return "";
+}
+
 function prospectRow(r){
   const tr = el("tr");
   const isErr = r.error != null;
   const score = r.fit_score ?? 0;
   tr.innerHTML = `
-    <td class="co">${esc(r.company)}<span class="line">${isErr ? "⚠ " + esc(r.error) : esc(r.one_line)}</span></td>
+    <td class="co">${esc(r.company)}${isErr ? "" : contactBadge(r)}<span class="line">${isErr ? "⚠ " + esc(r.error) : esc(r.one_line)}</span></td>
     <td><span class="tier ${isErr ? 'err' : tierClass(r.tier)}">${isErr ? '!' : tierLabel(r.tier)}</span></td>
     <td>${isErr ? '<span class="conf">—</span>' : `<div class="fit"><span class="num">${score}</span>
          <div class="meter"><i style="width:${score}%;background:${fitColor(r.tier)}"></i></div></div>`}</td>
@@ -921,15 +969,16 @@ async function openDrawer(id){
     if (r.sources?.length)
       body.appendChild(sec(`Sources (${r.sources.length})`,
         `<div class="sources">${r.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`).join("")}</div>`));
-    body.appendChild(emailSection(id, r.email));
+    body.appendChild(emailSection(id, r.email, r.sends || []));
   }
   body.appendChild(notesSection(id, r.notes || ""));
   $("#scrim").classList.add("show"); $("#drawer").classList.add("show");
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
 
-function emailSection(id, existing){
+function emailSection(id, existing, sends){
   const s = el("div", "sec email", `<h4>Outreach email</h4>`);
+  sends = sends || [];
   let lang = (existing && existing.language) || "english";
   const seg = el("div", "lang-seg");
   const mkOpt = (val, label) => {
@@ -941,14 +990,14 @@ function emailSection(id, existing){
 
   const gen = el("button", "icon-btn primary", existing ? "✉ Regenerate" : "✉ Generate email");
   const out = el("div", "email-out");
-  if (existing) renderEmail(id, out, existing);
+  if (existing) renderEmail(id, out, existing, sends);
   gen.onclick = async () => {
     gen.disabled = true; const was = gen.textContent; gen.textContent = "✉ Drafting…";
     try {
       const res = await fetch(`/api/prospects/${id}/email`, {method:"POST",
         headers:{"Content-Type":"application/json"}, body: JSON.stringify({ language: lang })});
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
-      renderEmail(id, out, await res.json());
+      renderEmail(id, out, await res.json(), sends);
       gen.textContent = "✉ Regenerate";
     } catch (e){ toast("Couldn't generate email: " + e.message); gen.textContent = was; }
     finally { gen.disabled = false; }
@@ -959,8 +1008,9 @@ function emailSection(id, existing){
   return s;
 }
 
-function renderEmail(id, out, email){
+function renderEmail(id, out, email, sends){
   out.innerHTML = "";
+  sends = sends || [];
   const wrap = el("div", "email-draft");
 
   // Status line: draft origin + language, and — once sent — the send/reply state.
@@ -1009,8 +1059,10 @@ function renderEmail(id, out, email){
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
       const data = await res.json();
       email.sent_at = data.sent_at; email.replied_at = null;
+      sends.unshift({subject: email.subject, body: ta.value,
+        contact_email: contact.email, sent_at: data.sent_at, replied_at: null});
       toast("Sent to " + contact.email);
-      drawStatus(); send.textContent = "↻ Resend";
+      drawStatus(); drawHistory(); send.textContent = "↻ Resend";
     } catch (e){ toast("Couldn't send: " + e.message); send.textContent = was; }
     finally { send.disabled = !(contact && contact.email); }
   };
@@ -1021,10 +1073,41 @@ function renderEmail(id, out, email){
     cardHost.appendChild(contactCard(id, contact, c => { contact = c; drawContact(); }));
     send.disabled = !(contact && contact.email);
   }
+
+  // Full outreach history: every send kept, so resends don't erase the trail.
+  const histHost = el("div", "hist-host");
+  function drawHistory(){
+    histHost.innerHTML = "";
+    if (!sends.length) return;
+    const h = el("div", "send-hist");
+    h.appendChild(el("div", "hh", sends.length === 1 ? "Sent once"
+      : "Sent " + sends.length + " times"));
+    for (const sd of sends){
+      const item = el("div", "sh");
+      const head = el("div", "sh-head");
+      head.appendChild(el("span", "caret", "▸"));
+      head.appendChild(el("span", "date", (sd.sent_at || "").slice(0, 10)));
+      if (sd.contact_email) head.appendChild(el("span", "to", esc(sd.contact_email)));
+      head.appendChild(el("span", sd.replied_at ? "rep" : "wait",
+        sd.replied_at ? "↩ replied " + sd.replied_at.slice(0, 10) : "awaiting reply"));
+      const bodyEl = el("div", "sh-body"); bodyEl.hidden = true;
+      bodyEl.appendChild(el("div", "subj", esc(sd.subject || "(no subject)")));
+      bodyEl.appendChild(el("div", "snap", esc(sd.body || "")));
+      head.onclick = () => {
+        bodyEl.hidden = !bodyEl.hidden;
+        head.querySelector(".caret").textContent = bodyEl.hidden ? "▸" : "▾";
+      };
+      item.append(head, bodyEl);
+      h.appendChild(item);
+    }
+    histHost.appendChild(h);
+  }
+
   drawStatus();
   drawContact();
+  drawHistory();
 
-  wrap.append(ta, actions);
+  wrap.append(ta, actions, histHost);
   out.appendChild(wrap);
 }
 

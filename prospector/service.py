@@ -311,7 +311,8 @@ def send_outreach(prospect_id: int, subject: str | None = None,
                           email.get("language") or get_output_language())
 
     sent = gmailer.send_email(to, subject, body)
-    db.mark_sent(prospect_id, sent["message_id"], sent["thread_id"])
+    db.mark_sent(prospect_id, sent["message_id"], sent["thread_id"],
+                 subject=subject, body=body, contact_email=to)
     updated = db.get_prospect(prospect_id)
     return {
         "id": prospect_id,
