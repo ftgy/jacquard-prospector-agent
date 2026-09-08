@@ -280,11 +280,16 @@
   .lang-opt.on { background: var(--accent); color: #fff; }
   .email-out { margin-top: 12px; }
   .email-saved { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 8px; }
-  .email-draft .email-subj { display: flex; gap: 10px; align-items: baseline; padding: 9px 12px;
+  .email-draft .email-subj { display: flex; gap: 10px; align-items: center; padding: 9px 12px;
     background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 9px; margin-bottom: 10px; }
   .email-subj .k { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
     font-family: var(--mono); flex-shrink: 0; }
-  .email-subj .subjtext { font-weight: 600; }
+  input.subjtext { flex: 1; min-width: 0; font-weight: 600; font-family: inherit; font-size: 13px;
+    color: var(--ink); background: transparent; border: 1px solid transparent; border-radius: 6px;
+    padding: 3px 6px; }
+  input.subjtext:hover { border-color: var(--hairline); }
+  input.subjtext:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    outline-offset: 0; border-color: var(--accent); background: var(--surface); }
   textarea.email-body { width: 100%; min-height: 220px; resize: vertical; font-family: inherit; font-size: 13px;
     line-height: 1.6; color: var(--ink); background: var(--surface-2); border: 1px solid var(--hairline);
     border-radius: 10px; padding: 12px 14px; }
@@ -1032,14 +1037,18 @@ function renderEmail(id, out, email, sends){
   const cardHost = el("div", "contact-host");
   wrap.appendChild(cardHost);
 
-  wrap.appendChild(el("div", "email-subj",
-    `<span class="k">Subject</span><span class="subjtext">${esc(email.subject)}</span>`));
+  const subjWrap = el("div", "email-subj", `<span class="k">Subject</span>`);
+  const subjInput = el("input", "subjtext");
+  subjInput.type = "text"; subjInput.value = email.subject || "";
+  subjInput.placeholder = "Subject line…";
+  subjWrap.appendChild(subjInput);
+  wrap.appendChild(subjWrap);
   const ta = el("textarea", "email-body"); ta.value = email.body;
   const actions = el("div", "email-actions");
   const copy = el("button", "icon-btn", "⧉ Copy");
   copy.onclick = async () => {
     const to = contact && contact.email ? `To: ${contact.email}\n` : "";
-    const text = `${to}Subject: ${email.subject}\n\n${ta.value}`;
+    const text = `${to}Subject: ${subjInput.value}\n\n${ta.value}`;
     try { await navigator.clipboard.writeText(text); toast("Email copied to clipboard."); }
     catch { toast("Couldn't copy — select the text and copy manually."); }
   };
@@ -1055,11 +1064,11 @@ function renderEmail(id, out, email, sends){
       // persists these too so the sent copy is what we store.
       const res = await fetch(`/api/prospects/${id}/send`, {method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ subject: email.subject, body: ta.value })});
+        body: JSON.stringify({ subject: subjInput.value, body: ta.value })});
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
       const data = await res.json();
-      email.sent_at = data.sent_at; email.replied_at = null;
-      sends.unshift({subject: email.subject, body: ta.value,
+      email.subject = subjInput.value; email.sent_at = data.sent_at; email.replied_at = null;
+      sends.unshift({subject: subjInput.value, body: ta.value,
         contact_email: contact.email, sent_at: data.sent_at, replied_at: null});
       toast("Sent to " + contact.email);
       drawStatus(); drawHistory(); send.textContent = "↻ Resend";
