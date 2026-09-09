@@ -21,10 +21,13 @@ import re
 import anthropic
 
 from .config import (
+    get_deepseek_model,
     get_email_model,
+    get_email_provider,
     get_model,
     get_output_language,
     get_web_search_tool,
+    make_deepseek_client,
     output_language_name,
     use_native_structured_output,
 )
@@ -141,6 +144,44 @@ def _structure(client: anthropic.Anthropic, system: str, ask: str, schema: dict,
             **kwargs,
         )
         text = "".join(b.text for b in resp.content if b.type == "text")
+        try:
+            return _extract_json(text)
+        except (json.JSONDecodeError, ValueError):
+            if attempt == 1:
+                raise
+            messages += [
+                {"role": "assistant", "content": text},
+                {"role": "user", "content": "That was not valid JSON. Reply with "
+                                            "ONLY the JSON object, no other text."},
+            ]
+    raise AssertionError("unreachable")
+
+
+def _structure_openai(client, system: str, ask: str, schema: dict,
+                      max_tokens: int = 4000, model: str = "") -> dict:
+    """One structured turn against an OpenAI-compatible model (DeepSeek).
+
+    The Anthropic path (_structure) can't be reused: DeepSeek speaks
+    chat.completions with a `system`/`user` message list and JSON mode, not
+    /v1/messages with output_config or the `thinking` param. So this mirrors the
+    *prompted-JSON* branch of _structure — schema pasted into the prompt, parsed
+    defensively with one retry — over the OpenAI SDK. JSON mode also requires the
+    word "JSON" in the prompt, which the schema instruction already provides.
+    """
+    system += (
+        "\n\nReply with ONE JSON object and nothing else — no prose, no markdown "
+        "fences. It must match this JSON Schema exactly:\n" + json.dumps(schema, indent=2)
+    )
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": ask}]
+    for attempt in range(2):
+        resp = client.chat.completions.create(
+            model=model,
+            max_tokens=max_tokens,
+            messages=messages,
+            response_format={"type": "json_object"},
+        )
+        text = resp.choices[0].message.content or ""
         try:
             return _extract_json(text)
         except (json.JSONDecodeError, ValueError):
@@ -666,15 +707,22 @@ def draft_outreach_email(client: anthropic.Anthropic, record: dict, icp: str,
     A single reasoning pass over research we already have (no web search), like
     niche suggestion. `language` is 'english' or 'spanish'; None follows the
     global config.OUTPUT_LANGUAGE. Returns {'subject', 'body'}.
+
+    Provider is EMAIL_PROVIDER: 'anthropic' uses the passed client; 'deepseek'
+    builds its own OpenAI-shape client and ignores `client` (so the rest of the
+    pipeline — including contact lookup — still runs on Anthropic).
     """
+    system = _email_system(icp, language or get_output_language())
+    ask = ("Write a cold outreach email to this company, grounded only in the facts "
+           "below.\n\n=== PROSPECT ===\n" + _email_context(record))
+    if get_email_provider() == "deepseek":
+        return _structure_openai(
+            make_deepseek_client(), system, ask, EMAIL_SCHEMA,
+            max_tokens=2000, model=get_deepseek_model(),
+        )
     return _structure(
-        client,
-        _email_system(icp, language or get_output_language()),
-        "Write a cold outreach email to this company, grounded only in the facts "
-        "below.\n\n=== PROSPECT ===\n" + _email_context(record),
-        EMAIL_SCHEMA,
-        max_tokens=2000,
-        model=get_email_model(),
+        client, system, ask, EMAIL_SCHEMA,
+        max_tokens=2000, model=get_email_model(),
     )
 
 

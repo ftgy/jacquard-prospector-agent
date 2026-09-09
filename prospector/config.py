@@ -70,8 +70,33 @@ def get_email_model() -> str:
     research pipeline, so it can run on its own model — a cheaper Claude, or a
     different "voice" to A/B-test against outreach reply rates. Falls back to the
     pipeline model. Override with PROSPECT_EMAIL_MODEL in .env.
+
+    Only consulted for the Anthropic email provider; DeepSeek uses
+    get_deepseek_model() instead (see get_email_provider).
     """
     return os.environ.get("PROSPECT_EMAIL_MODEL") or get_model()
+
+
+def get_email_provider() -> str:
+    """Which provider drafts the outreach email: 'anthropic' (default) or 'deepseek'.
+
+    The email stage is the one stage that can run off-Anthropic — a cheap,
+    different "voice" to A/B against reply rates. DeepSeek speaks the OpenAI chat
+    shape, not /v1/messages, so it takes a separate client and call path (see
+    agent._structure_openai). Set EMAIL_PROVIDER=deepseek in .env to switch.
+    """
+    p = os.environ.get("EMAIL_PROVIDER", "anthropic").strip().lower()
+    return p if p in ("anthropic", "deepseek") else "anthropic"
+
+
+def get_deepseek_model() -> str:
+    """DeepSeek model for the email stage. Override with DEEPSEEK_MODEL in .env."""
+    return os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+
+
+def get_deepseek_base_url() -> str:
+    """DeepSeek API base. Their key talks to this directly, not via the proxy."""
+    return os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
 
 
 def get_output_language() -> str:
@@ -138,9 +163,29 @@ def make_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(base_url=base_url) if base_url else anthropic.Anthropic()
 
 
+def make_deepseek_client():
+    """OpenAI-compatible client pointed straight at DeepSeek (EMAIL_PROVIDER=deepseek).
+
+    Uses its own DEEPSEEK_API_KEY and base URL — independent of the Anthropic/
+    LiteLLM path, so it works even when the proxy is down or over budget.
+    """
+    from openai import OpenAI
+
+    load_env()
+    key = os.environ.get("DEEPSEEK_API_KEY")
+    if not key:
+        raise SystemExit(
+            "EMAIL_PROVIDER=deepseek needs DEEPSEEK_API_KEY (see .env.example)."
+        )
+    return OpenAI(base_url=get_deepseek_base_url(), api_key=key)
+
+
 def describe_target() -> str:
     """One-line summary of where requests are going — printed on every run."""
     where = get_base_url() or "https://api.anthropic.com (direct)"
-    email = get_email_model()
-    email_note = "" if email == get_model() else f" (email: {email})"
+    if get_email_provider() == "deepseek":
+        email_note = f" (email: {get_deepseek_model()} via {get_deepseek_base_url()})"
+    else:
+        email = get_email_model()
+        email_note = "" if email == get_model() else f" (email: {email})"
     return f"model={get_model()}{email_note} via {where}"
