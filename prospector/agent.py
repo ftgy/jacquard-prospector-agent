@@ -554,6 +554,25 @@ LINKEDIN = "linkedin.com/in/francisco-narduzzi"
 # The signature's contact line: website and LinkedIn, joined with a middot.
 SIGNATURE_LINKS = f"{WEBSITE} · {LINKEDIN}"
 
+# The self-introduction (beat 1 of the playbook) is the one beat with no
+# per-prospect content — it says nothing about the reader — so it is fixed here
+# rather than regenerated on every draft: tune the positioning in one place and
+# every email opens the same way, with no wording drift. Injected verbatim into
+# the prompt (like SIGNATURE_LINKS); the model reproduces it right after the
+# greeting, then writes the personalized beats. Keyed by output language.
+SELF_INTRO = {
+    "spanish": (
+        "Mi nombre es Francisco, soy ingeniero de software. Me dedico a "
+        "automatizar procesos con agentes de IA, sobre todo tareas repetitivas "
+        "que hoy consumen horas de gente cualificada."
+    ),
+    "english": (
+        "My name is Francisco, I'm a software engineer. I automate processes with "
+        "AI agents, especially the repetitive tasks that consume hours of skilled "
+        "people's time."
+    ),
+}
+
 # The studio background and the email's shape + rules are NOT inlined here — they
 # live as editable Markdown under prospector/prompts/, read at draft time so the
 # outreach voice can be tuned without touching this module (see prospector/docs.py):
@@ -573,6 +592,7 @@ def email_playbook() -> str:
 
 def _email_system(icp: str, language: str) -> str:
     lang = _LANGUAGES.get(language, "English")
+    intro = SELF_INTRO.get(language, SELF_INTRO["english"])
     es_note = (' (in Spanish, address the reader as a team with the Spain '
                'second-person plural "vosotros"/"vuestro" and the -áis/-éis verb '
                'endings — the natural, peer-to-peer register; never the formal '
@@ -598,10 +618,15 @@ and the hours it eats, not "cutting-edge AI". Say the honest thing, even when it
 costs the sale. You are an outsider guessing at how they work from the outside, so \
 anything you did not directly observe is a hypothesis: hedge it ("I imagine…", \
 "I'd guess…") and invite the reader to correct you, rather than asserting how their \
-business runs as if you knew it better than they do. Open with a short greeting and \
-one plain line on who is writing; if you don't know the reader's name, keep it \
-neutral rather than inventing one. The email is about THEM — the studio gets one \
-line at most.
+business runs as if you knew it better than they do. Open with a short greeting; if \
+you don't know the reader's name, keep it neutral rather than inventing one. Then, as \
+the opening line of the body, reproduce this self-introduction VERBATIM — do not \
+paraphrase, translate, reorder, or add to it:
+
+{intro}
+
+After it, go straight into the personalized beats. The email is about THEM — the \
+studio gets one line at most.
 
 {email_playbook()}
 

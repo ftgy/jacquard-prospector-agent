@@ -1,11 +1,13 @@
 **Shape** — build the body from five beats, in order, as natural prose (no headers
 or labels):
 
-1. **Who you are** — one short, plain line. A real person introducing himself: an
-   independent software developer ("desarrollador de software independiente") who
-   automates processes with AI agents, especially the repetitive tasks that consume
-   hours of skilled people's time. No studio pitch, no headcount, no hype. Just
-   enough that the reader knows who's writing before you talk about them.
+1. **Who you are** — the fixed self-introduction, reproduced VERBATIM. This is the
+   one beat that never changes between prospects, so its exact wording is given to
+   you in the instructions above ("Mi nombre es Francisco, soy ingeniero de
+   software. Me dedico a automatizar…") — use it as-is: don't paraphrase, reorder,
+   or add to it. It introduces a real person, a software engineer who automates
+   repetitive processes with AI agents. No studio pitch, no headcount, no hype —
+   just enough that the reader knows who's writing before you talk about them.
 2. **The specific observation** — something concretely true about *them*, from the
    research (a recent hire, a stated process, how they describe their own team).
    Never "I loved your website" or generic flattery. This is the whole payoff of
@@ -29,9 +31,13 @@ or labels):
    workflow, resolved in a couple of weeks ("suele ser un flujo concreto que se
    resuelve en un par de semanas"). Easy to refuse.
 5. **The ask** — a low-friction question proposing a short next step: a 20-minute
-   call to talk it over ("¿Tendría sentido agendar una llamada de 20 minutos para
-   comentarlo?"), followed by a courteous easy out that leaves the door open ("si
-   ya lo tenéis cubierto, quedo a vuestra disposición para otra ocasión"). The easy out
+   call. Open it with this exact wording, VERBATIM — do not reword it: **"¿Os cuadra
+   agendar una llamada de 20 minutos para …?"**. Only the short "para …" tail is
+   yours to complete, in a few words that fit this company ("…para comentarlo",
+   "…para contaros cómo funciona"). Never change the fixed opener ("¿Os cuadra
+   agendar una llamada de 20 minutos para"); never fall back to "¿Tendría sentido…".
+   Follow the question with a courteous easy out that leaves the door open ("si ya
+   lo tenéis cubierto, quedo a vuestra disposición para otra ocasión"). The easy out
    is what makes it read as a person rather than a sequence. Close with a short
    valediction ("Un saludo,") above the signature.
 
@@ -42,7 +48,7 @@ sentences, the felt question, the self-intro, and the invitation to correct):
 >
 > Buenas,
 >
-> Soy Francisco, desarrollador de software independiente. Me dedico a automatizar
+> Mi nombre es Francisco, soy ingeniero de software. Me dedico a automatizar
 > procesos con agentes de IA, sobre todo tareas repetitivas que hoy consumen horas
 > de gente cualificada.
 >
@@ -56,7 +62,7 @@ sentences, the felt question, the self-intro, and the invitation to correct):
 > Lo que hago en estos casos es montar un agente pequeño que se coma exactamente
 > esa tarea. Suele ser un flujo concreto que se resuelve en un par de semanas.
 >
-> ¿Tendría sentido agendar una llamada de 20 minutos para comentarlo? Si ya lo
+> ¿Os cuadra agendar una llamada de 20 minutos para comentarlo? Si ya lo
 > tenéis cubierto, quedo a vuestra disposición para otra ocasión.
 >
 > Un saludo,
