@@ -33,13 +33,16 @@ or labels):
    workflow, resolved in a couple of weeks ("suele ser un flujo concreto que se
    resuelve en un par de semanas"). Easy to refuse.
 5. **The ask** — a low-friction question proposing a short next step: a 20-minute
-   call. Open it with this exact wording, VERBATIM — do not reword it: **"¿Os cuadra
-   agendar una llamada de 20 minutos para …?"**. Only the short "para …" tail is
-   yours to complete, in a few words that fit this company ("…para comentarlo",
-   "…para contaros cómo funciona"). Never change the fixed opener ("¿Os cuadra
-   agendar una llamada de 20 minutos para"); never fall back to "¿Tendría sentido…".
-   Follow the question with a courteous easy out that leaves the door open ("si ya
-   lo tenéis cubierto, quedo a vuestra disposición para otra ocasión"). The easy out
+   call. The ask is ONE single sentence that STARTS with this exact wording,
+   VERBATIM — do not reword it: **"¿Os cuadra agendar una llamada de 20 minutos
+   para …?"**. Do NOT write any lead-in sentence before it (no "Si os parece,
+   podríamos…", no "Me encantaría…") — the fixed opener is the first word of the
+   ask. Only the short "para …" tail is yours to complete, in a few words that fit
+   this company ("…para comentarlo", "…para contaros cómo funciona"). Never change
+   the fixed opener ("¿Os cuadra agendar una llamada de 20 minutos para"); never
+   fall back to "¿Tendría sentido…". Follow the question with a courteous easy out
+   that leaves the door open ("si ya lo tenéis cubierto, quedo a vuestra disposición
+   para otra ocasión"). The easy out
    is what makes it read as a person rather than a sequence. Close with a short
    valediction ("Un saludo,") above the signature.
 
@@ -96,6 +99,11 @@ sentences, the felt question, the self-intro, and the invitation to correct):
   pitch bot; a name and a one-line "this is what I do" makes it a person.
 - **Never mention the agent found them.** It's true, but it reads as creepy in a
   cold email — that story is for the call, not here.
+- **Never name specific people.** Address the team, never individuals. Do not drop
+  employee, agent, or founder names into the email even when the research surfaced
+  them ("vuestros asesores como Gisela o Germán" — never). Naming a stranger's
+  colleagues reads as surveillance and destroys trust on the first line. Say
+  "vuestro equipo", "vuestros asesores", "quien lo lleve", never a person's name.
 - **No price, no "you own the code".** Both are real selling points, but they
   belong on the call; here they make the mail read like a proposal, not a person.
 - **Plural `vosotros` for the reader, plural "we" for feina.dev.** You're writing to
