@@ -63,6 +63,17 @@ def get_model() -> str:
     return os.environ.get("PROSPECT_MODEL", DEFAULT_MODEL)
 
 
+def get_email_model() -> str:
+    """Model for the outreach-email draft stage.
+
+    Drafting a cold email is a Spanish creative-writing task, distinct from the
+    research pipeline, so it can run on its own model — a cheaper Claude, or a
+    different "voice" to A/B-test against outreach reply rates. Falls back to the
+    pipeline model. Override with PROSPECT_EMAIL_MODEL in .env.
+    """
+    return os.environ.get("PROSPECT_EMAIL_MODEL") or get_model()
+
+
 def get_output_language() -> str:
     """The key ('english'/'spanish') of the language research output is written in.
 
@@ -130,4 +141,6 @@ def make_client() -> anthropic.Anthropic:
 def describe_target() -> str:
     """One-line summary of where requests are going — printed on every run."""
     where = get_base_url() or "https://api.anthropic.com (direct)"
-    return f"model={get_model()} via {where}"
+    email = get_email_model()
+    email_note = "" if email == get_model() else f" (email: {email})"
+    return f"model={get_model()}{email_note} via {where}"

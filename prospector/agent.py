@@ -8,9 +8,11 @@ Then per prospect:
   1. research_company()  -> web research + sources (uses the web_search server tool)
   2. qualify_company()   -> structured scoring against your ICP (structured output)
 
-Every stage uses adaptive thinking and the model from config.get_model(). Stages
-that need the web search first, then a second call structures the result — mixing
-the web_search server tool with structured output in one call is unreliable.
+Every stage uses adaptive thinking and the model from config.get_model(), except
+the outreach-email draft, which uses config.get_email_model() so that creative
+Spanish copywriting can run on its own model. Stages that need the web search
+first, then a second call structures the result — mixing the web_search server
+tool with structured output in one call is unreliable.
 """
 
 import json
@@ -19,6 +21,7 @@ import re
 import anthropic
 
 from .config import (
+    get_email_model,
     get_model,
     get_output_language,
     get_web_search_tool,
@@ -105,8 +108,11 @@ def _extract_json(text: str) -> dict:
 
 
 def _structure(client: anthropic.Anthropic, system: str, ask: str, schema: dict,
-               max_tokens: int = 4000) -> dict:
+               max_tokens: int = 4000, model: str | None = None) -> dict:
     """One structured turn. Returns parsed JSON.
+
+    `model` overrides the pipeline model for this one call (see the email stage,
+    which can run on its own model); None uses config.get_model().
 
     Uses native schema enforcement where it's actually honored; otherwise asks
     for JSON in the prompt and parses defensively. Proxies commonly accept
@@ -127,7 +133,7 @@ def _structure(client: anthropic.Anthropic, system: str, ask: str, schema: dict,
     messages = [{"role": "user", "content": ask}]
     for attempt in range(2):
         resp = client.messages.create(
-            model=get_model(),
+            model=model or get_model(),
             max_tokens=max_tokens,
             system=system,
             thinking={"type": "adaptive"},
@@ -643,6 +649,7 @@ def draft_outreach_email(client: anthropic.Anthropic, record: dict, icp: str,
         "below.\n\n=== PROSPECT ===\n" + _email_context(record),
         EMAIL_SCHEMA,
         max_tokens=2000,
+        model=get_email_model(),
     )
 
 
