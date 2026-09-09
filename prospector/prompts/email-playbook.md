@@ -58,13 +58,13 @@ sentences, the felt question, the self-intro, and the invitation to correct):
 > de gente cualificada.
 >
 > Vi que en vuestra web decís que vuestros reclutadores son expertos en talento, no
-> comerciales. Aun así, imagino que buena parte de su semana se va en rascar LinkedIn
-> y reformatear CVs a la plantilla de cada cliente. ¿Cuánto tiempo pierde hoy el
+> comerciales. Aun así, imagino que buena parte de su semana se va en buscar perfiles
+> en LinkedIn y reformatear CVs a la plantilla de cada cliente. ¿Cuánto tiempo pierde hoy el
 > equipo entre que encuentra a un buen candidato y su CV está listo para el cliente?
 > Corregidme si me equivoco; es lo que suelo ver en empresas de vuestro tamaño, pero
 > cada equipo trabaja de manera diferente.
 >
-> Lo que hago en estos casos es montar un agente pequeño que se coma exactamente
+> Lo que hago en estos casos es montar un agente pequeño que se encargue justo de
 > esa tarea. Suele ser un flujo concreto que se resuelve en un par de semanas.
 >
 > ¿Os cuadra agendar una llamada de 20 minutos para comentarlo? Si ya lo
