@@ -10,15 +10,20 @@ or labels):
    research (a recent hire, a stated process, how they describe their own team).
    Never "I loved your website" or generic flattery. This is the whole payoff of
    having researched them.
-3. **The inference — as a guess, not a diagnosis** — what that observation *might*
-   imply about where their hours go. You're an outsider looking in, so hedge it
-   ("I imagine…", "I'd guess…", "probably") and name **one** concrete, repetitive
+3. **The inference — as a felt question, not a diagnosis** — what that observation
+   *might* imply about where their hours go. You're an outsider looking in, so hedge
+   it ("I imagine…", "I'd guess…", "probably") and name **one** concrete, repetitive
    task (reformatting CVs, copying data between systems, chasing order statuses,
-   the weekly report). One task, named — not "AI solutions", not a list. Then, in
-   the same breath, **invite correction**: one short line that says this is what
-   you usually see but every team works differently, so tell me if I've got it
-   wrong. That line is what keeps the email humble instead of a stranger telling
-   them how their own business works.
+   the weekly report). One task, named — not "AI solutions", not a list. Then, rather
+   than *asserting* how much time it eats, **turn the cost into a concrete question
+   that makes them feel it** — a specific question they'd have to stop and answer,
+   named with their own systems and cases ("¿cuánto tiempo pierde hoy el equipo entre
+   que un lead escribe en alemán desde Canarias y que Resales Online sabe a qué agente
+   va?"), not a vague "¿os pasa esto?". A pointed question lets *them* fill in the
+   number instead of you claiming it. Then, in the same breath, **invite correction**:
+   one short line that says this is what you usually see but every team works
+   differently, so tell me if I've got it wrong. That line is what keeps the email
+   humble instead of a stranger telling them how their own business works.
 4. **The offer** — small and concrete: what I do in these cases is build a small
    agent that takes exactly that task off their plate; usually one concrete
    workflow, resolved in a couple of weeks ("suele ser un flujo concreto que se
@@ -30,10 +35,10 @@ or labels):
    is what makes it read as a person rather than a sequence. Close with a short
    valediction ("Un saludo,") above the signature.
 
-**Example** (Spanish, `vosotros` — note the self-intro, the hedged guess, and the
-invitation to correct):
+**Example** (Spanish, `vosotros` — note the result-oriented subject, the short
+sentences, the felt question, the self-intro, and the invitation to correct):
 
-> Subject: Automatizar el reformateo de CVs
+> Subject: ¿Cuánto tarda un CV en estar listo para enviar?
 >
 > Buenas,
 >
@@ -41,11 +46,12 @@ invitation to correct):
 > procesos con agentes de IA, sobre todo tareas repetitivas que hoy consumen horas
 > de gente cualificada.
 >
-> Me llamó la atención que en vuestra web digáis que vuestros reclutadores son
-> expertos en talento, no comerciales. Imagino que, aun así, se les va bastante
-> tiempo a la semana a rascar LinkedIn y reformatear CVs a la plantilla de cada
-> cliente. Corregidme si me equivoco — es lo que suelo ver en agencias de vuestro
-> tamaño, pero cada equipo trabaja distinto.
+> Vi que en vuestra web decís que vuestros reclutadores son expertos en talento, no
+> comerciales. Aun así, imagino que buena parte de su semana se va en rascar LinkedIn
+> y reformatear CVs a la plantilla de cada cliente. ¿Cuánto tiempo pierde hoy el
+> equipo entre que encuentra a un buen candidato y su CV está listo para el cliente?
+> Corregidme si me equivoco — es lo que suelo ver en agencias de vuestro tamaño, pero
+> cada equipo trabaja distinto.
 >
 > Lo que hago en estos casos es montar un agente pequeño que se coma exactamente
 > esa tarea. Suele ser un flujo concreto que se resuelve en un par de semanas.
@@ -66,6 +72,12 @@ invitation to correct):
   se va el tiempo"). Let the observation and the guess breathe over a couple of
   clauses instead of collapsing into one dense sentence. Never drop the self-intro
   or the invitation-to-correct to save words.
+- **Keep sentences short — split, don't stack.** In a cold email every word competes
+  with the reader's patience, and a 40-plus-word sentence loses them. Never pack the
+  observation *and* the region list *and* the systems *and* the guess into one
+  breathless sentence. Aim for ~20 words per sentence; break anything longer into two
+  or three. State the observation in one sentence, the guess in the next, the felt
+  question in its own. Short sentences read as confident; long ones read as anxious.
 - **Guess, don't diagnose.** Anything you didn't directly observe is a hypothesis,
   so frame it as one ("imagino que…", "supongo que…", "me da la impresión de que…")
   and invite the reader to correct you. Never state an inference as fact, never tell

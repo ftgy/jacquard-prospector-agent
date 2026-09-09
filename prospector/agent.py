@@ -520,8 +520,11 @@ EMAIL_SCHEMA = {
     "properties": {
         "subject": {
             "type": "string",
-            "description": "A short, specific subject line that leads with the "
-                           "action verb \"Automatizar\" + the task — not clickbait.",
+            "description": "A short, specific, result-oriented subject line — a "
+                           "pointed question or a felt outcome tied to the one task "
+                           "you identified (e.g. \"¿Sigue alguien asignando leads a "
+                           "mano?\"), never a flat description of an internal task "
+                           "and never \"AI\" or clickbait.",
         },
         "body": {
             "type": "string",
@@ -577,9 +580,11 @@ and its work are always "we" — the company voice, never a headcount claim. The
 is to earn a short reply, not to close a sale.
 
 Write the ENTIRE email — subject and body — in {lang}, in natural, idiomatic, \
-plain-spoken business {lang}{es_note}. The subject is short and specific, and leads \
-with the action: start it with the verb "Automatizar" followed by the task (e.g. \
-"Automatizar el punteo de facturas"). It names the task, never "AI", and is never \
+plain-spoken business {lang}{es_note}. The subject is short, specific, and \
+result-oriented: it makes the reader feel the outcome, not read an internal task \
+description. Prefer a pointed, concrete question that names the pain (e.g. "¿Sigue \
+alguien asignando leads a mano?") or a felt result, grounded in the one task you \
+identified. Never lead with a bare "Automatizar el…" task label, never "AI", never \
 clickbait.
 
 Voice: plain, specific, unhyped, and HUMBLE. Concrete over abstract — name the task \
