@@ -22,10 +22,12 @@ or labels):
    named with their own systems and cases ("¿cuánto tiempo pierde hoy el equipo entre
    que un lead escribe en alemán desde Canarias y que Resales Online sabe a qué agente
    va?"), not a vague "¿os pasa esto?". A pointed question lets *them* fill in the
-   number instead of you claiming it. Then, in the same breath, **invite correction**:
-   one short line that says this is what you usually see but every team works
-   differently, so tell me if I've got it wrong. That line is what keeps the email
-   humble instead of a stranger telling them how their own business works.
+   number instead of you claiming it. Then, in the same breath, **invite correction**
+   with this fixed line, reproduced VERBATIM — do not reword it: **"Corregidme si me
+   equivoco; es lo que suelo ver en empresas de vuestro tamaño, pero cada equipo
+   trabaja de manera diferente."** Keep "empresas" as-is; don't swap it for the
+   reader's sector. That line is what keeps the email humble instead of a stranger
+   telling them how their own business works.
 4. **The offer** — small and concrete: what I do in these cases is build a small
    agent that takes exactly that task off their plate; usually one concrete
    workflow, resolved in a couple of weeks ("suele ser un flujo concreto que se
@@ -56,8 +58,8 @@ sentences, the felt question, the self-intro, and the invitation to correct):
 > comerciales. Aun así, imagino que buena parte de su semana se va en rascar LinkedIn
 > y reformatear CVs a la plantilla de cada cliente. ¿Cuánto tiempo pierde hoy el
 > equipo entre que encuentra a un buen candidato y su CV está listo para el cliente?
-> Corregidme si me equivoco — es lo que suelo ver en agencias de vuestro tamaño, pero
-> cada equipo trabaja distinto.
+> Corregidme si me equivoco; es lo que suelo ver en empresas de vuestro tamaño, pero
+> cada equipo trabaja de manera diferente.
 >
 > Lo que hago en estos casos es montar un agente pequeño que se coma exactamente
 > esa tarea. Suele ser un flujo concreto que se resuelve en un par de semanas.

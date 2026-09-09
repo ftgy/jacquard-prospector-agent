@@ -614,6 +614,22 @@ SELF_INTRO = {
     ),
 }
 
+# The invitation-to-correct that closes the observation beat (beat 3). Like the
+# self-intro it carries no per-prospect content — it's the standing humility line
+# that keeps the email from telling a stranger how their own business works — so it
+# is fixed here and reproduced verbatim right after the felt question, rather than
+# reworded on every draft. Keyed by output language.
+INVITE_CORRECTION = {
+    "spanish": (
+        "Corregidme si me equivoco; es lo que suelo ver en empresas de vuestro "
+        "tamaño, pero cada equipo trabaja de manera diferente."
+    ),
+    "english": (
+        "Correct me if I'm wrong; it's what I usually see at companies your size, "
+        "but every team works differently."
+    ),
+}
+
 # The studio background and the email's shape + rules are NOT inlined here — they
 # live as editable Markdown under prospector/prompts/, read at draft time so the
 # outreach voice can be tuned without touching this module (see prospector/docs.py):
@@ -634,6 +650,7 @@ def email_playbook() -> str:
 def _email_system(icp: str, language: str) -> str:
     lang = _LANGUAGES.get(language, "English")
     intro = SELF_INTRO.get(language, SELF_INTRO["english"])
+    invite = INVITE_CORRECTION.get(language, INVITE_CORRECTION["english"])
     es_note = (' (in Spanish, address the reader as a team with the Spain '
                'second-person plural "vosotros"/"vuestro" and the -áis/-éis verb '
                'endings — the natural, peer-to-peer register; never the formal '
@@ -668,6 +685,13 @@ paraphrase, translate, reorder, or add to it:
 
 After it, go straight into the personalized beats. The email is about THEM — the \
 studio gets one line at most.
+
+One more fixed line, reproduced VERBATIM: right after your felt question (beat 3), \
+invite the reader to correct you with this exact sentence — do not paraphrase, \
+translate, reorder, or reword it, and do not change "empresas" to the reader's \
+sector:
+
+{invite}
 
 {email_playbook()}
 
