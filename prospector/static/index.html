@@ -336,8 +336,6 @@
   .diff del { background: color-mix(in srgb, var(--tier-d) 18%, transparent); color: var(--tier-d); }
   .diff ins { background: color-mix(in srgb, var(--tier-a) 18%, transparent); color: var(--ink);
     text-decoration: none; }
-  .cbadge.queued { color: var(--accent-ink);
-    background: color-mix(in srgb, var(--accent) 16%, transparent); }
   .oqueue .qstat { font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 1px 8px;
     border-radius: 999px; white-space: nowrap; }
   .oqueue .qstat.ready { color: var(--tier-a); background: color-mix(in srgb, var(--tier-a) 14%, transparent); }
@@ -351,6 +349,13 @@
 
   /* Last-contacted flag, in its own list column. */
   td.contact { white-space: nowrap; }
+  /* "To contact" star, first column of every prospect table. */
+  td.mark { width: 1%; padding-right: 0; }
+  .star { background: none; border: 0; cursor: pointer; font-size: 17px; line-height: 1;
+    color: var(--muted); opacity: .45; padding: 4px; border-radius: 6px; }
+  tbody tr:hover .star, .star:focus-visible { opacity: 1; }
+  .star:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+  .star.on { color: var(--accent); opacity: 1; }
   .cbadge { display: inline-block; vertical-align: 1px;
     padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
     font-family: var(--mono); letter-spacing: .01em; }
@@ -988,7 +993,6 @@ function relTime(iso){
 function contactBadge(r){
   if (r.replied_at) return `<span class="cbadge replied" title="Replied ${esc(r.replied_at.slice(0,10))}">↩ replied</span>`;
   if (r.sent_at) return `<span class="cbadge sent" title="Sent ${esc(r.sent_at.slice(0,10))}">✉ ${esc(relTime(r.sent_at))}</span>`;
-  if (r.queued_at) return `<span class="cbadge queued" title="Marked to contact">★ to contact</span>`;
   return `<span class="cbadge none" title="No email sent yet">not sent</span>`;
 }
 
@@ -997,14 +1001,37 @@ function prospectRow(r){
   const isErr = r.error != null;
   const score = r.fit_score ?? 0;
   tr.innerHTML = `
+    <td class="mark"></td>
     <td class="co">${esc(r.company)}<span class="line">${isErr ? "⚠ " + esc(r.error) : esc(r.one_line)}</span></td>
     <td><span class="tier ${isErr ? 'err' : tierClass(r.tier)}">${isErr ? '!' : tierLabel(r.tier)}</span></td>
     <td>${isErr ? '<span class="conf">—</span>' : `<div class="fit"><span class="num">${score}</span>
          <div class="meter"><i style="width:${score}%;background:${fitColor(r.tier)}"></i></div></div>`}</td>
     <td><span class="conf">${isErr ? '—' : esc(r.confidence || '—')}</span></td>
     <td class="contact">${isErr ? '<span class="conf">—</span>' : contactBadge(r)}</td>`;
+  if (!isErr) tr.querySelector("td.mark").appendChild(starButton(r));
   tr.onclick = () => openDrawer(r.id);
   return tr;
+}
+
+// Toggle "to contact" in place, without opening the drawer.
+function starButton(r){
+  const b = el("button", "star");
+  const draw = () => { b.classList.toggle("on", !!r.queued_at); b.textContent = r.queued_at ? "★" : "☆";
+    b.title = r.queued_at ? "Marked to contact — click to unmark" : "Mark to contact"; };
+  draw();
+  b.onclick = async e => {
+    e.stopPropagation(); b.disabled = true;
+    const queued = !r.queued_at;
+    try {
+      const res = await fetch(`/api/prospects/${r.id}/queue`, {method:"PUT",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ queued })});
+      if (!res.ok){ const x = await res.json().catch(()=>({})); throw new Error(x.detail || res.statusText); }
+      r.queued_at = queued ? new Date().toISOString() : null; draw();
+      toast(queued ? `${r.company} marked to contact.` : `${r.company} removed from the queue.`);
+    } catch (err){ toast("Couldn't update: " + err.message); }
+    finally { b.disabled = false; }
+  };
+  return b;
 }
 
 // --- detail drawer ---
