@@ -1,0 +1,71 @@
+"""Deterministic playbook checks on drafted emails (no network)."""
+
+from prospector.agent import INVITE_CORRECTION, SELF_INTRO, SENDER_NAME, SIGNATURE_LINKS
+from prospector.email_lint import lint_email
+
+SUBJECT = "¿Cuánto tarda un CV en estar listo para enviar?"
+
+
+def body(observation="Vi que en vuestra web decís que vuestros reclutadores son "
+                     "expertos en talento. Imagino que buena parte de la semana se "
+                     "va en reformatear CVs. ¿Cuánto tiempo pierde hoy el equipo en "
+                     "eso?",
+         ask="¿Os cuadra agendar una llamada de 20 minutos para comentarlo? Si ya lo "
+             "tenéis cubierto, quedo a vuestra disposición para otra ocasión.",
+         intro=SELF_INTRO["spanish"], signature=f"{SENDER_NAME}\n{SIGNATURE_LINKS}"):
+    return (f"Buenas,\n\n{intro}\n\n{observation}\n{INVITE_CORRECTION['spanish']}\n\n"
+            "Lo que hago en estos casos es montar un agente que se encargue justo de "
+            f"esa tarea.\n\n{ask}\n\nUn saludo,\n{signature}")
+
+
+def rules(issues):
+    return {i["rule"] for i in issues}
+
+
+def test_clean_email_passes():
+    assert lint_email(SUBJECT, body()) == []
+
+
+def test_fixed_lines_survive_rewrapping():
+    rewrapped = body().replace(SELF_INTRO["spanish"],
+                               SELF_INTRO["spanish"].replace(" soy ", "\nsoy "))
+    assert lint_email(SUBJECT, rewrapped) == []
+
+
+def test_paraphrased_intro_is_flagged():
+    b = body(intro="Soy Francisco, ingeniero que automatiza procesos con IA.")
+    assert "self-intro" in rules(lint_email(SUBJECT, b))
+
+
+def test_reworded_ask_is_flagged():
+    b = body(ask="¿Tendría sentido una llamada de 20 minutos?")
+    found = rules(lint_email(SUBJECT, b))
+    assert {"ask-opener", "banned"} <= found
+
+
+def test_usted_and_pequeno_are_flagged():
+    b = body(observation="Imagino que usted pierde horas. Montaría un agente pequeño.")
+    details = " ".join(i["detail"] for i in lint_email(SUBJECT, b))
+    assert "usted" in details and "pequeño" in details
+
+
+def test_missing_signature_is_flagged():
+    b = body(signature=SENDER_NAME)
+    assert "signature" in rules(lint_email(SUBJECT, b))
+
+
+def test_url_in_body_is_flagged_but_not_signature():
+    assert "url-in-body" not in rules(lint_email(SUBJECT, body()))
+    b = body(observation="Mirad feina.dev para ver ejemplos.")
+    assert "url-in-body" in rules(lint_email(SUBJECT, b))
+
+
+def test_long_email_and_long_sentence_are_flagged():
+    long_sentence = " ".join(["palabra"] * 40) + "."
+    b = body(observation=" ".join([long_sentence] * 5))
+    assert {"length", "long-sentence"} <= rules(lint_email(SUBJECT, b))
+
+
+def test_subject_rules():
+    assert "subject" in rules(lint_email("Automatizar la gestión de CVs", body()))
+    assert "subject" in rules(lint_email("Agentes de IA para vuestro equipo", body()))

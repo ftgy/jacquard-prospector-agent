@@ -78,6 +78,10 @@ class EmailRequest(BaseModel):
     language: str | None = Field(None, pattern="^(english|spanish)$")
 
 
+class QueueRequest(BaseModel):
+    queued: bool
+
+
 class SendRequest(BaseModel):
     # The edited subject/body to send. Omitted -> send the stored draft as-is.
     subject: str | None = Field(None, max_length=500)
@@ -112,6 +116,15 @@ def api_set_notes(prospect_id: int, req: NotesRequest):
     if not db.set_prospect_notes(prospect_id, req.notes):
         raise HTTPException(404, "prospect not found")
     return {"id": prospect_id, "notes": req.notes.strip() or None}
+
+
+@app.put("/api/prospects/{prospect_id}/queue")
+def api_set_queued(prospect_id: int, req: QueueRequest):
+    """Mark (or unmark) a prospect "to contact" — the auto-draft job
+    (scripts/draft_queued.py) writes and reviews emails for marked prospects."""
+    if not db.set_queued(prospect_id, req.queued):
+        raise HTTPException(404, "prospect not found")
+    return {"id": prospect_id, "queued": req.queued}
 
 
 @app.post("/api/prospects/{prospect_id}/email")
@@ -190,6 +203,12 @@ def api_gmail_status():
 def api_outreach():
     """Send/reply statistics for the Outreach tab."""
     return db.outreach_stats()
+
+
+@app.get("/api/outreach/queue")
+def api_outreach_queue():
+    """Prospects marked "to contact" and not yet sent, with their draft status."""
+    return db.outreach_queue()
 
 
 @app.post("/api/outreach/refresh-replies")

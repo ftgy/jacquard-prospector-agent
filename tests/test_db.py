@@ -475,3 +475,40 @@ def test_categorized_results_hides_empty_categories_and_buckets_uncategorized():
     assert data["categories"] == []
     assert [r["id"] for r in data["uncategorized"]["runs"]] == [rid]
     assert [p["company"] for p in data["uncategorized"]["prospects"]] == ["Widgetco"]
+
+
+def test_set_queued_keeps_first_mark_and_unmarks():
+    pid = db.insert_prospect(make_record("Acme"))
+    assert db.set_queued(pid, True)
+    first = db.get_prospect(pid)["queued_at"]
+    assert first
+    db.set_queued(pid, True)
+    assert db.get_prospect(pid)["queued_at"] == first
+    db.set_queued(pid, False)
+    assert db.get_prospect(pid)["queued_at"] is None
+    assert not db.set_queued(9999, True)
+
+
+def test_queued_needing_draft_and_outreach_queue_statuses():
+    waiting = db.insert_prospect(make_record("Waiting"))
+    ready = db.insert_prospect(make_record("Ready"))
+    broken = db.insert_prospect(make_record("Broken"))
+    sent = db.insert_prospect(make_record("Sent"))
+    unqueued = db.insert_prospect(make_record("Unqueued"))
+    for pid in (waiting, ready, broken, sent):
+        db.set_queued(pid, True)
+    for pid in (ready, broken, sent, unqueued):
+        db.set_prospect_email(pid, "s", "b", "spanish")
+        db.set_email_review(pid, {"issues": [{"rule": "x", "detail": "y"}],
+                                  "remaining": [], "error": None})
+    db.set_email_review(broken, {"issues": [], "remaining": [{"rule": "r", "detail": "d"}],
+                                 "error": None})
+    db.set_prospect_contact(ready, "hola@ready.es")
+    db.mark_sent(sent, "m", "t")
+
+    assert db.queued_needing_draft() == [
+        {"id": waiting, "company": "Waiting", "drafted": False}]
+    statuses = {q["company"]: q["status"] for q in db.outreach_queue()}
+    assert statuses == {"Waiting": "waiting", "Ready": "ready", "Broken": "needs-review"}
+    fixes = {q["company"]: q["fixes"] for q in db.outreach_queue()}
+    assert fixes["Ready"] == 1

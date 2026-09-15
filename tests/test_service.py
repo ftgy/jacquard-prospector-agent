@@ -234,7 +234,8 @@ def test_draft_email_for_uses_stored_record(monkeypatch):
     pid = db.insert_prospect(make_record("Acme"))
     out = service.draft_email_for(pid, language="spanish", client=FakeClient())
 
-    assert out == {"subject": "s", "body": "b", "language": "spanish", "contact": None}
+    assert {k: out[k] for k in ("subject", "body", "language", "contact")} == \
+        {"subject": "s", "body": "b", "language": "spanish", "contact": None}
     assert captured["company"] == "Acme"
     assert captured["icp"] is service.ICP
     assert captured["language"] == "spanish"
@@ -242,6 +243,77 @@ def test_draft_email_for_uses_stored_record(monkeypatch):
     stored = db.get_prospect(pid)["email"]
     assert stored["subject"] == "s"
     assert stored["language"] == "spanish"
+
+
+def test_draft_email_for_stores_reviewed_text_and_original(monkeypatch):
+    monkeypatch.setattr(service, "draft_outreach_email",
+                        lambda client, rec, icp, lang: {"subject": "s", "body": "usted b"})
+    monkeypatch.setattr(service, "find_contact", lambda client, rec: None)
+    seen = {}
+
+    def fake_review(client, rec, draft, icp, language, lint):
+        seen["lint"] = lint
+        return {"issues": [{"rule": "vosotros", "detail": "usted -> vosotros"}],
+                "subject": "s", "body": "vosotros b"}
+
+    monkeypatch.setattr(service, "review_outreach_email", fake_review)
+    pid = db.insert_prospect(make_record("Acme"))
+    out = service.draft_email_for(pid, language="spanish", client=FakeClient())
+
+    assert out["body"] == "vosotros b"
+    # the deterministic findings were handed to the reviewer
+    assert any("usted" in i["detail"] for i in seen["lint"])
+    stored = db.get_prospect(pid)["email"]
+    assert stored["body"] == "vosotros b"
+    review = stored["review"]
+    assert review["original"] == {"subject": "s", "body": "usted b"}
+    assert review["changed"] is True and review["error"] is None
+    assert len(review["issues"]) == 1
+    # "remaining" is re-linted on the reviewed text (usted is gone)
+    assert not any("usted" in i["detail"] for i in review["remaining"])
+
+
+def test_draft_email_for_keeps_draft_when_review_fails(monkeypatch):
+    monkeypatch.setattr(service, "draft_outreach_email",
+                        lambda client, rec, icp, lang: {"subject": "s", "body": "b"})
+    monkeypatch.setattr(service, "find_contact", lambda client, rec: None)
+
+    def boom(*a, **k):
+        raise RuntimeError("proxy down")
+
+    monkeypatch.setattr(service, "review_outreach_email", boom)
+    pid = db.insert_prospect(make_record("Acme"))
+    service.draft_email_for(pid, client=FakeClient())
+
+    stored = db.get_prospect(pid)["email"]
+    assert stored["body"] == "b"
+    assert stored["review"]["error"] == "proxy down"
+    assert db.queued_needing_draft() == []            # not queued -> not picked up
+    db.set_queued(pid, True)
+    assert db.queued_needing_draft() == [{"id": pid, "company": "Acme", "drafted": True}]
+
+    # the retry reviews the stored original, without redrafting
+    monkeypatch.setattr(service, "draft_outreach_email",
+                        lambda *a: pytest.fail("should not redraft"))
+    monkeypatch.setattr(service, "review_outreach_email",
+                        lambda client, rec, draft, icp, language, lint:
+                        {"issues": [], "subject": draft["subject"], "body": draft["body"]})
+    out = service.review_email_for(pid, client=FakeClient())
+    assert out["review"]["error"] is None
+    assert db.queued_needing_draft() == []
+
+
+def test_draft_email_for_review_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("EMAIL_REVIEW", "off")
+    monkeypatch.setattr(service, "draft_outreach_email",
+                        lambda client, rec, icp, lang: {"subject": "s", "body": "b"})
+    monkeypatch.setattr(service, "find_contact", lambda client, rec: None)
+    monkeypatch.setattr(service, "review_outreach_email",
+                        lambda *a, **k: pytest.fail("review should be skipped"))
+    pid = db.insert_prospect(make_record("Acme"))
+    out = service.draft_email_for(pid, language="spanish", client=FakeClient())
+    assert out["review"]["skipped"] is True
+    assert out["review"]["remaining"]              # "b" breaks the fixed-line rules
 
 
 def test_draft_email_for_finds_and_persists_contact(monkeypatch):

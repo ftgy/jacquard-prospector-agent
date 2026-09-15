@@ -26,6 +26,7 @@ from .config import (
     get_email_provider,
     get_model,
     get_output_language,
+    get_review_model,
     get_web_search_tool,
     make_deepseek_client,
     output_language_name,
@@ -748,6 +749,84 @@ def draft_outreach_email(client: anthropic.Anthropic, record: dict, icp: str,
         client, system, ask, EMAIL_SCHEMA,
         max_tokens=2000, model=get_email_model(),
     )
+
+
+# --- Stage 3b: review the draft against the playbook -------------------------
+
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "issues": {
+            "type": "array",
+            "description": "Every playbook rule the draft broke, one entry each. "
+                           "Empty if the draft already follows every rule.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "rule": {"type": "string",
+                             "description": "Short name of the rule broken."},
+                    "detail": {"type": "string",
+                               "description": "What was wrong and how you fixed it."},
+                },
+                "required": ["rule", "detail"],
+                "additionalProperties": False,
+            },
+        },
+        "subject": {"type": "string",
+                    "description": "The corrected subject (unchanged if it was fine)."},
+        "body": {"type": "string",
+                 "description": "The corrected body (unchanged if it was fine)."},
+    },
+    "required": ["issues", "subject", "body"],
+    "additionalProperties": False,
+}
+
+_REVIEW_EDITOR = """You are the editor who checks a cold outreach email before it \
+is sent. Another model wrote it following the brief below. Your job is to find \
+every place the draft breaks the brief and fix it with the SMALLEST possible edit.
+
+- Keep the writer's voice, wording, and choices wherever they follow the rules. Do \
+not polish, restyle, or rewrite sentences that are already fine — a draft that \
+breaks nothing comes back byte-for-byte unchanged, with an empty issues list.
+- Check it against the research: any fact not supported by the prospect notes is \
+invented — remove it or soften it into a hedged guess.
+- Never add new facts, names, or claims of your own.
+- Fixed lines (self-introduction, invitation to correct, ask opener, signature) \
+must match the brief exactly; restore them verbatim if they drifted.
+- Automatic checks may have flagged problems already; fix each one (they are \
+reliable), then look for what they can't catch: people named, inferences stated \
+as fact, the agent-found-you story, generic flattery, more than one task, a lead-in \
+before the ask, a flat or AI-sounding subject.
+
+=== THE WRITER'S BRIEF ===
+"""
+
+
+def review_outreach_email(client: anthropic.Anthropic, record: dict, draft: dict,
+                          icp: str, language: str,
+                          lint_issues: list[dict] | None = None) -> dict:
+    """Check a drafted email against the playbook and fix what it breaks.
+
+    Always runs on Anthropic (config.get_review_model), whichever provider wrote
+    the draft. `lint_issues` are the deterministic findings (email_lint) passed in
+    as a head start. Returns {'issues', 'subject', 'body'}; the edits are minimal,
+    so a clean draft comes back unchanged.
+    """
+    system = _REVIEW_EDITOR + _email_system(icp, language)
+    flagged = "\n".join(f"- [{i['rule']}] {i['detail']}" for i in lint_issues or [])
+    ask = ("=== PROSPECT RESEARCH ===\n" + _email_context(record)
+           + "\n\n=== AUTOMATIC CHECKS FLAGGED ===\n" + (flagged or "(nothing)")
+           + "\n\n=== DRAFT ===\nSubject: " + draft.get("subject", "")
+           + "\n\n" + draft.get("body", ""))
+    # Generous ceiling: adaptive thinking on a long brief routinely spends ~3.5k
+    # tokens before the answer, and running out mid-thought returns empty text.
+    out = _structure(client, system, ask, REVIEW_SCHEMA,
+                     max_tokens=16000, model=get_review_model())
+    return {
+        "issues": [i for i in out.get("issues") or [] if isinstance(i, dict)],
+        "subject": out.get("subject") or draft.get("subject", ""),
+        "body": out.get("body") or draft.get("body", ""),
+    }
 
 
 # --- Stage 4: find where to send it ------------------------------------------

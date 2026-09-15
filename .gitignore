@@ -20,6 +20,8 @@ prospector.db-shm
 # Unattended populate driver: log + lock
 populate.log
 .populate.lock
+draft_queued.log
+.draft_queued.lock
 
 # Editor / IDE
 .idea/

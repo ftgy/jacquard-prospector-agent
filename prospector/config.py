@@ -89,6 +89,24 @@ def get_email_provider() -> str:
     return p if p in ("anthropic", "deepseek") else "anthropic"
 
 
+def get_review_model() -> str:
+    """Claude model that reviews each drafted email against the playbook.
+
+    The review always runs on Anthropic, whichever provider drafted the email —
+    it's the check that catches the drafter drifting from the rules. Falls back to
+    the email model, then the pipeline model. Override with PROSPECT_REVIEW_MODEL.
+    """
+    return os.environ.get("PROSPECT_REVIEW_MODEL") or get_email_model()
+
+
+def email_review_enabled() -> bool:
+    """Whether drafts get the Claude review pass. On unless EMAIL_REVIEW=off.
+
+    The free deterministic checks (email_lint) run either way.
+    """
+    return os.environ.get("EMAIL_REVIEW", "on").strip().lower() not in ("off", "0", "false")
+
+
 def get_deepseek_model() -> str:
     """DeepSeek model for the email stage. Override with DEEPSEEK_MODEL in .env."""
     return os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")

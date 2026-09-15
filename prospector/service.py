@@ -20,10 +20,18 @@ from .agent import (
     discover_candidates,
     draft_outreach_email,
     find_contact,
+    review_outreach_email,
     run_prospect,
     suggest_niches,
 )
-from .config import get_output_language, make_client, using_proxy
+from .config import (
+    email_review_enabled,
+    get_output_language,
+    get_review_model,
+    make_client,
+    using_proxy,
+)
+from .email_lint import lint_email
 from .icp import ICP
 
 
@@ -199,14 +207,16 @@ def suggest_niches_for(location: str, count: int = 8,
 
 def draft_email_for(prospect_id: int, language: str | None = None,
                     client: anthropic.Anthropic | None = None) -> dict:
-    """Draft an outreach email for one stored prospect. Returns {'subject','body',
-    'language','contact'}.
+    """Draft, review, and store an outreach email for one prospect. Returns
+    {'subject','body','language','review','contact'}.
 
-    Synchronous. Drafts the email from the saved research, then looks up where to
-    send it (the contact search only runs once — a stored contact is reused across
-    regenerations). `language` is 'english' or 'spanish'; None follows the global
-    config.OUTPUT_LANGUAGE. Raises LookupError if the prospect is gone, ValueError
-    if it's a failed-research row.
+    Synchronous. Drafts the email from the saved research (EMAIL_PROVIDER), runs
+    the playbook checks + Claude review over it (see _review_draft), stores the
+    reviewed text, then looks up where to send it (the contact search only runs
+    once — a stored contact is reused across regenerations). `language` is
+    'english' or 'spanish'; None follows the global config.OUTPUT_LANGUAGE.
+    Raises LookupError if the prospect is gone, ValueError if it's a
+    failed-research row.
     """
     rec = db.get_prospect(prospect_id)
     if rec is None:
@@ -216,12 +226,75 @@ def draft_email_for(prospect_id: int, language: str | None = None,
                          "to write an email from.")
     language = language or get_output_language()
     client = client or make_client()
-    email = draft_outreach_email(client, rec, ICP, language)
-    db.set_prospect_email(prospect_id, email.get("subject", ""),
-                          email.get("body", ""), language)
-    email["language"] = language
+    draft = draft_outreach_email(client, rec, ICP, language)
+    email = _store_reviewed(prospect_id, rec, draft, language, client)
     email["contact"] = _resolve_contact(prospect_id, rec, client)
     return email
+
+
+def review_email_for(prospect_id: int,
+                     client: anthropic.Anthropic | None = None) -> dict:
+    """Re-run the review on a prospect's stored draft, without redrafting.
+
+    Reviews the ORIGINAL draft kept by the last review when there is one (so a
+    retry after a failed review starts from what the drafter wrote), else the
+    stored text. Backs the auto-draft retry for reviews that errored. Returns the
+    same shape as draft_email_for, minus 'contact'.
+    """
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    email = rec.get("email")
+    if not email:
+        raise ValueError("No drafted email to review — generate one first.")
+    original = (email.get("review") or {}).get("original") or {
+        "subject": email.get("subject", ""), "body": email.get("body", "")}
+    language = email.get("language") or get_output_language()
+    return _store_reviewed(prospect_id, rec, original, language,
+                           client or make_client())
+
+
+def _store_reviewed(prospect_id: int, rec: dict, draft: dict, language: str,
+                    client: anthropic.Anthropic) -> dict:
+    """Review a draft and persist the result (final text + review record)."""
+    final, review = _review_draft(client, rec, draft, language)
+    db.set_prospect_email(prospect_id, final["subject"], final["body"], language)
+    db.set_email_review(prospect_id, review)
+    return {**final, "language": language, "review": review}
+
+
+def _review_draft(client: anthropic.Anthropic, rec: dict, draft: dict,
+                  language: str) -> tuple[dict, dict]:
+    """Run the playbook checks and the Claude review over one draft.
+
+    Returns (final {'subject','body'}, review record). The record keeps the
+    drafter's original text, the deterministic findings before (`lint`) and after
+    (`remaining`) review, and Claude's fixes (`issues`). A review failure never
+    loses the draft: it's stored unreviewed with `error` set, so the queue shows it
+    as needing attention and the auto-draft job retries just the review.
+    """
+    original = {"subject": draft.get("subject", ""), "body": draft.get("body", "")}
+    lint = lint_email(original["subject"], original["body"], language)
+    review = {
+        "original": original, "lint": lint, "issues": [], "remaining": lint,
+        "changed": False, "model": None, "error": None,
+        "reviewed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    if not email_review_enabled():
+        review["skipped"] = True
+        return original, review
+    try:
+        out = review_outreach_email(client, rec, original, ICP, language, lint)
+    except Exception as e:  # keep the draft; mark it unreviewed
+        review["error"] = friendly_api_error(e)
+        return original, review
+    final = {"subject": out["subject"], "body": out["body"]}
+    review.update(
+        issues=out["issues"], model=get_review_model(),
+        remaining=lint_email(final["subject"], final["body"], language),
+        changed=final != original,
+    )
+    return final, review
 
 
 def _resolve_contact(prospect_id: int, rec: dict,

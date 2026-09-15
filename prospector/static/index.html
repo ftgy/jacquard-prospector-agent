@@ -314,6 +314,41 @@
   .email-saved .reply-pill { color: var(--accent-ink);
     background: color-mix(in srgb, var(--accent) 16%, transparent); }
 
+  /* "To contact" toggle + Claude review of the draft */
+  .icon-btn.queued { color: var(--accent-ink); border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+  .review { margin-bottom: 10px; border: 1px solid var(--hairline); border-radius: 9px;
+    background: var(--surface-2); font-size: 12.5px; }
+  .review.ok { border-color: color-mix(in srgb, var(--tier-a) 35%, var(--hairline)); }
+  .review.warn { border-color: color-mix(in srgb, var(--tier-c) 50%, var(--hairline));
+    background: color-mix(in srgb, var(--tier-c) 9%, var(--surface-2)); }
+  .review .rv-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; }
+  .review .rv-head .caret { color: var(--muted); font-size: 10px; width: 10px; }
+  .review .rv-head .rv-meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .review .rv-body { padding: 0 12px 12px 30px; }
+  .review .rv-body h5 { margin: 10px 0 4px; font-size: 10px; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted); }
+  .review ul { margin: 0; padding-left: 16px; }
+  .review li { margin: 3px 0; color: var(--ink-2); }
+  .review li b { font-family: var(--mono); font-size: 11px; color: var(--ink); font-weight: 600; }
+  .review .diff { white-space: pre-wrap; line-height: 1.6; background: var(--surface);
+    border: 1px solid var(--hairline-2); border-radius: 6px; padding: 8px 10px; color: var(--ink-2); }
+  .diff del { background: color-mix(in srgb, var(--tier-d) 18%, transparent); color: var(--tier-d); }
+  .diff ins { background: color-mix(in srgb, var(--tier-a) 18%, transparent); color: var(--ink);
+    text-decoration: none; }
+  .cbadge.queued { color: var(--accent-ink);
+    background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .oqueue .qstat { font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 1px 8px;
+    border-radius: 999px; white-space: nowrap; }
+  .oqueue .qstat.ready { color: var(--tier-a); background: color-mix(in srgb, var(--tier-a) 14%, transparent); }
+  .oqueue .qstat.needs-review { color: var(--tier-d); background: color-mix(in srgb, var(--tier-d) 12%, transparent); }
+  .oqueue .qstat.no-contact, .oqueue .qstat.waiting { color: var(--muted);
+    background: color-mix(in srgb, var(--muted) 12%, transparent); }
+  .oqueue li { cursor: pointer; }
+  .oqueue li:hover { background: var(--surface-2); }
+  .oqueue .subj { color: var(--ink-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; min-width: 0; flex: 1; }
+
   /* Last-contacted flag, in its own list column. */
   td.contact { white-space: nowrap; }
   .cbadge { display: inline-block; vertical-align: 1px;
@@ -522,10 +557,15 @@
     </div>
 
     <div class="panel">
+      <h2>To contact</h2>
+      <ul class="orecent oqueue" id="o-queue"></ul>
+    </div>
+
+    <div class="panel">
       <h2>Recent sends</h2>
       <ul class="orecent" id="o-recent"></ul>
     </div>
-    <p class="pane-hint">Sends and replies are tracked through your connected Gmail account. Counts are by local day.</p>
+    <p class="pane-hint">Mark companies “to contact” from their detail panel; <code>scripts/draft_queued.py</code> drafts and reviews their emails. Sends and replies are tracked through your connected Gmail account. Counts are by local day.</p>
   </section>
 </div>
 
@@ -615,6 +655,7 @@ async function loadStats(){
 // --- outreach ---
 async function loadOutreach(){
   loadGmailStatus();
+  loadQueue();
   let s;
   try { s = await fetch("/api/outreach").then(r=>r.json()); }
   catch { toast("Couldn't load outreach stats."); return; }
@@ -642,6 +683,24 @@ async function loadGmailStatus(){
     b.appendChild(el("code", null, "python scripts/gmail_auth.py"));
   }
   host.appendChild(b);
+}
+
+const QUEUE_LABEL = { ready: "ready to send", "needs-review": "⚠ check draft",
+  "no-contact": "no contact", waiting: "waiting for draft" };
+async function loadQueue(){
+  const host = $("#o-queue");
+  let q; try { q = await fetch("/api/outreach/queue").then(r=>r.json()); } catch { return; }
+  host.innerHTML = "";
+  if (!q.length){ host.appendChild(el("li", null, "<span class='wait'>Nothing queued — mark companies “to contact” from their detail panel.</span>")); return; }
+  for (const r of q){
+    const li = el("li");
+    li.appendChild(el("span", "co", esc(r.company)));
+    li.appendChild(el("span", "subj", esc(r.subject || "")));
+    if (r.fixes) li.appendChild(el("span", "to", plural(r.fixes, "fix", "fixes")));
+    li.appendChild(el("span", "qstat " + r.status, esc(QUEUE_LABEL[r.status] || r.status)));
+    li.onclick = () => openDrawer(r.id);
+    host.appendChild(li);
+  }
 }
 
 function renderBars(series){
@@ -929,6 +988,7 @@ function relTime(iso){
 function contactBadge(r){
   if (r.replied_at) return `<span class="cbadge replied" title="Replied ${esc(r.replied_at.slice(0,10))}">↩ replied</span>`;
   if (r.sent_at) return `<span class="cbadge sent" title="Sent ${esc(r.sent_at.slice(0,10))}">✉ ${esc(relTime(r.sent_at))}</span>`;
+  if (r.queued_at) return `<span class="cbadge queued" title="Marked to contact">★ to contact</span>`;
   return `<span class="cbadge none" title="No email sent yet">not sent</span>`;
 }
 
@@ -981,16 +1041,33 @@ async function openDrawer(id){
     if (r.sources?.length)
       body.appendChild(sec(`Sources (${r.sources.length})`,
         `<div class="sources">${r.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`).join("")}</div>`));
-    body.appendChild(emailSection(id, r.email, r.sends || []));
+    body.appendChild(emailSection(id, r.email, r.sends || [], !!r.queued_at));
   }
   body.appendChild(notesSection(id, r.notes || ""));
   $("#scrim").classList.add("show"); $("#drawer").classList.add("show");
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
 
-function emailSection(id, existing, sends){
+function emailSection(id, existing, sends, queued){
   const s = el("div", "sec email", `<h4>Outreach email</h4>`);
   sends = sends || [];
+  // "To contact" marks the prospect for the auto-draft job.
+  const mark = el("button", "icon-btn");
+  const drawMark = () => { mark.className = "icon-btn" + (queued ? " queued" : "");
+    mark.textContent = queued ? "★ To contact" : "☆ Mark to contact"; };
+  drawMark();
+  mark.onclick = async () => {
+    mark.disabled = true;
+    try {
+      const res = await fetch(`/api/prospects/${id}/queue`, {method:"PUT",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ queued: !queued })});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      queued = !queued; drawMark();
+      toast(queued ? "Marked to contact — the next draft run picks it up." : "Removed from the queue.");
+      refreshAfterDrawerChange();
+    } catch (e){ toast("Couldn't update: " + e.message); }
+    finally { mark.disabled = false; }
+  };
   let lang = (existing && existing.language) || "english";
   const seg = el("div", "lang-seg");
   const mkOpt = (val, label) => {
@@ -1011,11 +1088,12 @@ function emailSection(id, existing, sends){
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
       renderEmail(id, out, await res.json(), sends);
       gen.textContent = "✉ Regenerate";
+      refreshAfterDrawerChange();
     } catch (e){ toast("Couldn't generate email: " + e.message); gen.textContent = was; }
     finally { gen.disabled = false; }
   };
   const genRow = el("div", "email-gen");
-  genRow.append(seg, gen);
+  genRow.append(seg, gen, mark);
   s.append(genRow, out);
   return s;
 }
@@ -1043,6 +1121,7 @@ function renderEmail(id, out, email, sends){
   let contact = email.contact;                    // updated in place by the search
   const cardHost = el("div", "contact-host");
   wrap.appendChild(cardHost);
+  if (email.review) wrap.appendChild(reviewPanel(email.review, email));
 
   const subjWrap = el("div", "email-subj", `<span class="k">Subject</span>`);
   const subjInput = el("input", "subjtext");
@@ -1079,6 +1158,7 @@ function renderEmail(id, out, email, sends){
         contact_email: contact.email, sent_at: data.sent_at, replied_at: null});
       toast("Sent to " + contact.email);
       drawStatus(); drawHistory(); send.textContent = "↻ Resend";
+      refreshAfterDrawerChange();
     } catch (e){ toast("Couldn't send: " + e.message); send.textContent = was; }
     finally { send.disabled = !(contact && contact.email); }
   };
@@ -1125,6 +1205,64 @@ function renderEmail(id, out, email, sends){
 
   wrap.append(ta, actions, histHost);
   out.appendChild(wrap);
+}
+
+// What the checks + Claude review did to the draft: fixes, rules still broken,
+// and a word diff against the drafter's original. Collapsed unless it needs you.
+function reviewPanel(rv, email){
+  const remaining = rv.remaining || [], issues = rv.issues || [];
+  const warn = !!rv.error || remaining.length > 0 || rv.skipped;
+  const box = el("div", "review " + (warn ? "warn" : "ok"));
+  let title;
+  if (rv.error) title = "⚠ Not reviewed — " + rv.error.split("\n")[0];
+  else if (rv.skipped) title = remaining.length ? `⚠ Review off · ${plural(remaining.length, "rule", "rules")} broken` : "Review off · checks passed";
+  else if (remaining.length) title = `⚠ Reviewed · ${plural(remaining.length, "rule", "rules")} still broken`;
+  else title = issues.length ? `✓ Reviewed · Claude fixed ${plural(issues.length, "thing", "things")}` : "✓ Reviewed · no changes needed";
+  const head = el("div", "rv-head", `<span class="caret">▸</span><span>${esc(title)}</span>`);
+  if (rv.model) head.appendChild(el("span", "rv-meta", esc(rv.model)));
+  const body = el("div", "rv-body"); body.hidden = !warn;
+  head.querySelector(".caret").textContent = body.hidden ? "▸" : "▾";
+  head.onclick = () => { body.hidden = !body.hidden; head.querySelector(".caret").textContent = body.hidden ? "▸" : "▾"; };
+  const list = (h, items) => {
+    if (!items.length) return;
+    body.appendChild(el("h5", null, esc(h)));
+    body.appendChild(el("ul", null, items.map(i => `<li><b>${esc(i.rule)}</b> ${esc(i.detail)}</li>`).join("")));
+  };
+  list("Still broken", remaining);
+  list("Fixed by Claude", issues);
+  if (rv.changed && rv.original){
+    body.appendChild(el("h5", null, "Changes from the original draft"));
+    const d = el("div", "diff");
+    d.innerHTML = wordDiff(`Subject: ${rv.original.subject}\n\n${rv.original.body}`,
+                           `Subject: ${email.subject}\n\n${email.body}`);
+    body.appendChild(d);
+  }
+  box.append(head, body);
+  return box;
+}
+
+// Word-level diff (LCS over whitespace-preserving tokens) -> HTML with <del>/<ins>.
+function wordDiff(a, b){
+  const A = a.split(/(\s+)/), B = b.split(/(\s+)/), n = A.length, m = B.length;
+  const L = Array.from({length: n + 1}, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      L[i][j] = A[i] === B[j] ? L[i+1][j+1] + 1 : Math.max(L[i+1][j], L[i][j+1]);
+  let i = 0, j = 0, html = "";
+  while (i < n && j < m){
+    if (A[i] === B[j]){ html += esc(A[i]); i++; j++; }
+    else if (L[i+1][j] >= L[i][j+1]) html += `<del>${esc(A[i++])}</del>`;
+    else html += `<ins>${esc(B[j++])}</ins>`;
+  }
+  while (i < n) html += `<del>${esc(A[i++])}</del>`;
+  while (j < m) html += `<ins>${esc(B[j++])}</ins>`;
+  return html;
+}
+
+// Keep the list behind the drawer in sync after a queue/draft change.
+function refreshAfterDrawerChange(){
+  if (state.tab === "outreach") loadQueue();
+  else if (state.tab !== "niches") loadGroups(state.tab);
 }
 
 // A contact "Send to" card. `onFound` is called with the new contact (or null)

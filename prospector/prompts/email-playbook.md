@@ -64,7 +64,7 @@ sentences, the felt question, the self-intro, and the invitation to correct):
 > Corregidme si me equivoco; es lo que suelo ver en empresas de vuestro tamaño, pero
 > cada equipo trabaja de manera diferente.
 >
-> Lo que hago en estos casos es montar un agente pequeño que se encargue justo de
+> Lo que hago en estos casos es montar un agente que se encargue justo de
 > esa tarea. Suele ser un flujo concreto que se resuelve en un par de semanas.
 >
 > ¿Os cuadra agendar una llamada de 20 minutos para comentarlo? Si ya lo
@@ -104,6 +104,10 @@ sentences, the felt question, the self-intro, and the invitation to correct):
   them ("vuestros asesores como Gisela o Germán" — never). Naming a stranger's
   colleagues reads as surveillance and destroys trust on the first line. Say
   "vuestro equipo", "vuestros asesores", "quien lo lleve", never a person's name.
+- **Never call the agent "pequeño".** Write "un agente", not "un agente pequeño"
+  ni "un pequeño agente". The diminutive shrinks the work in the reader's head
+  and makes it sound like a toy; the scope is already carried by "un flujo
+  concreto que se resuelve en un par de semanas".
 - **No price, no "you own the code".** Both are real selling points, but they
   belong on the call; here they make the mail read like a proposal, not a person.
 - **Plural `vosotros` for the reader, plural "we" for feina.dev.** You're writing to

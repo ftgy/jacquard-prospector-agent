@@ -350,3 +350,15 @@ def test_list_runs(client):
     db.create_run("discover", "second", 1)
     runs = client.get("/api/runs").json()
     assert [r["query"] for r in runs][:2] == ["second", "first"]
+
+
+def test_queue_endpoints(client):
+    pid = db.insert_prospect(make_record("Acme"))
+    r = client.put(f"/api/prospects/{pid}/queue", json={"queued": True})
+    assert r.status_code == 200
+    assert client.get(f"/api/prospects/{pid}").json()["queued_at"]
+    q = client.get("/api/outreach/queue").json()
+    assert [(x["company"], x["status"]) for x in q] == [("Acme", "waiting")]
+    client.put(f"/api/prospects/{pid}/queue", json={"queued": False})
+    assert client.get("/api/outreach/queue").json() == []
+    assert client.put("/api/prospects/9999/queue", json={"queued": True}).status_code == 404

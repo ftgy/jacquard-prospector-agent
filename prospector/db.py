@@ -95,6 +95,8 @@ def init_db() -> None:
                 gmail_message_id TEXT,   -- Gmail id of the sent message
                 gmail_thread_id  TEXT,   -- its thread, followed to detect replies
                 replied_at       TEXT,   -- when a reply was first detected
+                queued_at        TEXT,   -- marked "to contact": auto-draft queue
+                email_review     TEXT,   -- JSON: lint + Claude review of the draft
                 error            TEXT,
                 created_at       TEXT NOT NULL
             );
@@ -127,7 +129,7 @@ def init_db() -> None:
         for col in ("domain", "notes", "email_subject", "email_body", "email_at",
                     "email_lang", "contact_email", "contact_phone", "contact_website",
                     "contact_source", "contact_at", "sent_at", "gmail_message_id",
-                    "gmail_thread_id", "replied_at"):
+                    "gmail_thread_id", "replied_at", "queued_at", "email_review"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT")
         # runs.category_id was added after the first release (niche categories).
@@ -495,6 +497,7 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
         # tables can flag which companies have already been emailed.
         "sent_at": row["sent_at"],
         "replied_at": row["replied_at"],
+        "queued_at": row["queued_at"],
     }
     if full:
         rec["notes"] = row["notes"]
@@ -502,6 +505,7 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
             {"subject": row["email_subject"], "body": row["email_body"],
              "generated_at": row["email_at"], "language": row["email_lang"],
              "contact": _contact_dict(row),
+             "review": json.loads(row["email_review"]) if row["email_review"] else None,
              "sent_at": row["sent_at"], "replied_at": row["replied_at"]}
             if row["email_subject"] else None
         )
@@ -597,6 +601,87 @@ def set_prospect_email(prospect_id: int, subject: str, body: str,
             (subject, body, _now(), language, prospect_id),
         )
         return cur.rowcount > 0
+
+
+def set_email_review(prospect_id: int, review: dict | None) -> bool:
+    """Store the review of the current draft (see service._review_draft)."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET email_review=? WHERE id=?",
+            (json.dumps(review) if review is not None else None, prospect_id),
+        )
+        return cur.rowcount > 0
+
+
+def set_queued(prospect_id: int, queued: bool) -> bool:
+    """Mark (or unmark) a prospect "to contact". Re-marking keeps the original
+    timestamp, so the queue stays first-marked-first-drafted."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET queued_at=CASE WHEN ? THEN COALESCE(queued_at, ?) "
+            "ELSE NULL END WHERE id=?",
+            (1 if queued else 0, _now(), prospect_id),
+        )
+        return cur.rowcount > 0
+
+
+def queued_needing_draft(limit: int = 10) -> list[dict]:
+    """The auto-draft worklist: queued, not sent, and either never drafted or
+    drafted but not yet reviewed (the review errored — e.g. the proxy was down).
+
+    Returns [{'id', 'company', 'drafted'}], oldest mark first; 'drafted' tells the
+    caller it only needs to re-run the review, not write a new draft.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, company, email_subject, email_review FROM prospects "
+            "WHERE queued_at IS NOT NULL AND sent_at IS NULL AND error IS NULL "
+            "ORDER BY queued_at, id",
+        ).fetchall()
+    work = []
+    for r in rows:
+        review = json.loads(r["email_review"]) if r["email_review"] else None
+        if not r["email_subject"]:
+            work.append({"id": r["id"], "company": r["company"], "drafted": False})
+        elif review is None or review.get("error"):
+            work.append({"id": r["id"], "company": r["company"], "drafted": True})
+        if len(work) >= limit:
+            break
+    return work
+
+
+def outreach_queue() -> list[dict]:
+    """Every queued, unsent prospect with its draft state, for the Outreach tab.
+
+    status: 'waiting' (no draft yet), 'no-contact', 'needs-review' (review failed
+    or rules still broken after it), or 'ready'. Oldest mark first.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, company, tier, fit_score, queued_at, email_subject, email_at, "
+            "contact_email, email_review FROM prospects "
+            "WHERE queued_at IS NOT NULL AND sent_at IS NULL AND error IS NULL "
+            "ORDER BY queued_at, id",
+        ).fetchall()
+    out = []
+    for r in rows:
+        review = json.loads(r["email_review"]) if r["email_review"] else None
+        if not r["email_subject"]:
+            status = "waiting"
+        elif not review or review.get("error") or review.get("remaining"):
+            status = "needs-review"
+        elif not r["contact_email"]:
+            status = "no-contact"
+        else:
+            status = "ready"
+        out.append({
+            "id": r["id"], "company": r["company"], "tier": r["tier"],
+            "fit_score": r["fit_score"], "queued_at": r["queued_at"],
+            "subject": r["email_subject"], "drafted_at": r["email_at"],
+            "contact_email": r["contact_email"], "status": status,
+            "fixes": len((review or {}).get("issues") or []),
+        })
+    return out
 
 
 def set_prospect_contact(prospect_id: int, email: str, phone: str | None = None,
