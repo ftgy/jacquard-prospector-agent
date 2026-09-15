@@ -342,8 +342,20 @@
   .oqueue .qstat.needs-review { color: var(--tier-d); background: color-mix(in srgb, var(--tier-d) 12%, transparent); }
   .oqueue .qstat.no-contact, .oqueue .qstat.waiting { color: var(--muted);
     background: color-mix(in srgb, var(--muted) 12%, transparent); }
+  .oblocked .rchips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .oblocked .rchip { font-family: var(--mono); font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--hairline); background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
+  .oblocked .rchip b { color: var(--tier-d); margin-left: 4px; }
+  .oblocked .rchip.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--ink); }
+  .oblocked .orecent > li { display: block; cursor: pointer; }
+  .oblocked .bl-head { display: flex; align-items: center; gap: 10px; }
+  .oblocked .bl-reasons { margin: 5px 0 0; padding-left: 16px; font-size: 12px; color: var(--ink-2); }
+  .oblocked .bl-reasons li { display: list-item; padding: 1px 0; border: 0; cursor: default; }
+  .oblocked .bl-reasons li:hover { background: none; }
+  .oblocked .bl-reasons b { font-family: var(--mono); font-size: 11px; color: var(--tier-d); font-weight: 600; }
   .oqueue li { cursor: pointer; }
   .oqueue li:hover { background: var(--surface-2); }
+  .oblocked .orecent > li:hover { background: var(--surface-2); }
   .oqueue .subj { color: var(--ink-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; min-width: 0; flex: 1; }
 
@@ -567,6 +579,12 @@
     </div>
 
     <div class="panel">
+      <h2>Blocked drafts</h2>
+      <div class="oblocked"><div class="rchips" id="o-blocked-rules"></div>
+      <ul class="orecent" id="o-blocked"></ul></div>
+    </div>
+
+    <div class="panel">
       <h2>Recent sends</h2>
       <ul class="orecent" id="o-recent"></ul>
     </div>
@@ -661,6 +679,7 @@ async function loadStats(){
 async function loadOutreach(){
   loadGmailStatus();
   loadQueue();
+  loadBlocked();
   let s;
   try { s = await fetch("/api/outreach").then(r=>r.json()); }
   catch { toast("Couldn't load outreach stats."); return; }
@@ -704,6 +723,40 @@ async function loadQueue(){
     if (r.fixes) li.appendChild(el("span", "to", plural(r.fixes, "fix", "fixes")));
     li.appendChild(el("span", "qstat " + r.status, esc(QUEUE_LABEL[r.status] || r.status)));
     li.onclick = () => openDrawer(r.id);
+    host.appendChild(li);
+  }
+}
+
+// Drafts that failed the review or rule checks, with reasons. Rule chips count
+// drafts per rule and filter the list (click again to clear).
+let blocked = { summary: [], items: [] }, blockedRule = null;
+async function loadBlocked(){
+  try { blocked = await fetch("/api/outreach/blocked").then(r=>r.json()); } catch { return; }
+  if (blockedRule && !blocked.summary.some(x => x.rule === blockedRule)) blockedRule = null;
+  renderBlocked();
+}
+function renderBlocked(){
+  const chips = $("#o-blocked-rules"), host = $("#o-blocked");
+  chips.innerHTML = ""; host.innerHTML = "";
+  if (!blocked.items.length){ host.appendChild(el("li", null, "<span class='wait'>No blocked drafts — everything reviewed passed.</span>")); return; }
+  for (const s of blocked.summary){
+    const c = el("button", "rchip" + (s.rule === blockedRule ? " on" : ""), `${esc(s.rule)}<b>${s.count}</b>`);
+    c.onclick = () => { blockedRule = blockedRule === s.rule ? null : s.rule; renderBlocked(); };
+    chips.appendChild(c);
+  }
+  const items = blockedRule ? blocked.items.filter(i => i.reasons.some(r => r.rule === blockedRule)) : blocked.items;
+  for (const it of items){
+    const li = el("li");
+    const head = el("div", "bl-head");
+    head.appendChild(el("span", "co", esc(it.company)));
+    head.appendChild(el("span", "subj", esc(it.subject || "")));
+    if (it.queued) head.appendChild(el("span", "to", "★ queued"));
+    if (it.fixes) head.appendChild(el("span", "to", plural(it.fixes, "fix", "fixes")));
+    head.appendChild(el("span", "when", (it.drafted_at || "").slice(0, 10)));
+    li.appendChild(head);
+    li.appendChild(el("ul", "bl-reasons", it.reasons.map(r =>
+      `<li><b>${esc(r.rule)}</b> ${esc(r.detail.split("\n")[0])}</li>`).join("")));
+    li.onclick = () => openDrawer(it.id);
     host.appendChild(li);
   }
 }
@@ -1288,7 +1341,7 @@ function wordDiff(a, b){
 
 // Keep the list behind the drawer in sync after a queue/draft change.
 function refreshAfterDrawerChange(){
-  if (state.tab === "outreach") loadQueue();
+  if (state.tab === "outreach"){ loadQueue(); loadBlocked(); }
   else if (state.tab !== "niches") loadGroups(state.tab);
 }
 

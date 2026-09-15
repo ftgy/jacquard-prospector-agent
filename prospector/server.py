@@ -205,6 +205,12 @@ def api_outreach():
     return db.outreach_stats()
 
 
+@app.get("/api/outreach/blocked")
+def api_outreach_blocked():
+    """Unsent drafts that failed the review or the rule checks, with reasons."""
+    return db.blocked_drafts()
+
+
 @app.get("/api/outreach/queue")
 def api_outreach_queue():
     """Prospects marked "to contact" and not yet sent, with their draft status."""

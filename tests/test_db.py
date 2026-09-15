@@ -512,3 +512,25 @@ def test_queued_needing_draft_and_outreach_queue_statuses():
     assert statuses == {"Waiting": "waiting", "Ready": "ready", "Broken": "needs-review"}
     fixes = {q["company"]: q["fixes"] for q in db.outreach_queue()}
     assert fixes["Ready"] == 1
+
+
+def test_blocked_drafts_lists_failed_reviews_with_reasons():
+    ok = db.insert_prospect(make_record("Ok"))
+    broken = db.insert_prospect(make_record("Broken"))
+    errored = db.insert_prospect(make_record("Errored"))
+    sent = db.insert_prospect(make_record("SentBroken"))
+    rule = {"rule": "self-intro", "detail": "Missing the fixed line"}
+    for pid, review in ((ok, {"issues": [rule], "remaining": [], "error": None}),
+                        (broken, {"issues": [], "remaining": [rule], "error": None}),
+                        (errored, {"issues": [], "remaining": [rule], "error": "proxy down"}),
+                        (sent, {"issues": [], "remaining": [rule], "error": None})):
+        db.set_prospect_email(pid, "s", "b", "spanish")
+        db.set_email_review(pid, review)
+    db.mark_sent(sent, "m", "t")
+
+    out = db.blocked_drafts()
+    assert {i["company"] for i in out["items"]} == {"Broken", "Errored"}
+    errored_item = next(i for i in out["items"] if i["company"] == "Errored")
+    assert errored_item["reasons"][0] == {"rule": "review-error", "detail": "proxy down"}
+    assert out["summary"] == [{"rule": "self-intro", "count": 2},
+                              {"rule": "review-error", "count": 1}]

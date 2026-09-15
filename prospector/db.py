@@ -650,6 +650,43 @@ def queued_needing_draft(limit: int = 10) -> list[dict]:
     return work
 
 
+def blocked_drafts() -> dict:
+    """Unsent drafts that failed review, with why — for manual analysis.
+
+    Blocked means the Claude review errored, or deterministic rules still fail on
+    the reviewed text (review['remaining']). Returns {'summary': [{'rule',
+    'count'}] most common first, 'items': [...]} with items newest draft first;
+    each item's reasons are [{'rule', 'detail'}], a failed review appearing as
+    rule 'review-error'.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, company, tier, fit_score, queued_at, email_subject, email_at, "
+            "email_review FROM prospects "
+            "WHERE email_review IS NOT NULL AND sent_at IS NULL AND error IS NULL "
+            "ORDER BY email_at DESC, id DESC",
+        ).fetchall()
+    items, counts = [], {}
+    for r in rows:
+        review = json.loads(r["email_review"])
+        reasons = list(review.get("remaining") or [])
+        if review.get("error"):
+            reasons.insert(0, {"rule": "review-error", "detail": review["error"]})
+        if not reasons:
+            continue
+        for rule in {x["rule"] for x in reasons}:
+            counts[rule] = counts.get(rule, 0) + 1
+        items.append({
+            "id": r["id"], "company": r["company"], "tier": r["tier"],
+            "fit_score": r["fit_score"], "queued": r["queued_at"] is not None,
+            "subject": r["email_subject"], "drafted_at": r["email_at"],
+            "reasons": reasons, "fixes": len(review.get("issues") or []),
+        })
+    summary = [{"rule": k, "count": v}
+               for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+    return {"summary": summary, "items": items}
+
+
 def outreach_queue() -> list[dict]:
     """Every queued, unsent prospect with its draft state, for the Outreach tab.
 

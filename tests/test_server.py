@@ -362,3 +362,7 @@ def test_queue_endpoints(client):
     client.put(f"/api/prospects/{pid}/queue", json={"queued": False})
     assert client.get("/api/outreach/queue").json() == []
     assert client.put("/api/prospects/9999/queue", json={"queued": True}).status_code == 404
+
+
+def test_blocked_endpoint(client):
+    assert client.get("/api/outreach/blocked").json() == {"summary": [], "items": []}
