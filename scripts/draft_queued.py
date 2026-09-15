@@ -2,9 +2,10 @@
 """
 Draft + review outreach emails for prospects marked "to contact", unattended.
 
-Designed for cron, like populate.py. Each invocation:
+Designed for cron, like populate.py; the dashboard's "Draft now" button runs the
+same job (service.draft_queued) under the same lock. Each invocation:
 
-  1. Takes a lock so two runs never overlap.
+  1. Takes the draft lock so two runs (cron, terminal, or button) never overlap.
   2. Picks up to --limit queued, unsent prospects that have no draft yet, or whose
      review failed last time (those only get the review re-run, not a new draft).
   3. Drafts (EMAIL_PROVIDER), checks + reviews with Claude, finds a contact, and
@@ -22,23 +23,18 @@ Exit 0 on success or a clean skip (locked / empty queue); 1 on setup errors.
 """
 
 import argparse
-import fcntl
 import logging
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # find prospector/
 
 from prospector import db
-from prospector.config import load_env, make_client
-from prospector.service import draft_email_for, friendly_api_error, review_email_for
+from prospector.config import load_env
+from prospector.service import acquire_draft_lock, draft_queued, release_draft_lock
 
 log = logging.getLogger("draft_queued")
-
-PACE_SECONDS = 2.0
-MAX_CONSECUTIVE_ERRORS = 3
 
 
 def setup_logging(log_path: Path) -> None:
@@ -50,68 +46,24 @@ def setup_logging(log_path: Path) -> None:
         log.addHandler(h)
 
 
-def acquire_lock(lock_path: Path):
-    """Return an open, flock'd file handle, or None if another run holds it."""
-    fh = open(lock_path, "w")
-    try:
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        fh.close()
-        return None
-    return fh
-
-
 def run_once(limit: int, dry_run: bool) -> int:
     db.init_db()
-    work = db.queued_needing_draft(limit)
-    if not work:
-        log.info("Queue empty — nothing to draft.")
-        return 0
-    log.info("%d queued prospect(s) to process.", len(work))
     if dry_run:
+        work = db.queued_needing_draft(limit)
+        log.info("%d queued prospect(s) to process.", len(work))
         for w in work:
             log.info("  [dry-run] would %s: %s",
                      "re-review" if w["drafted"] else "draft", w["company"])
         return 0
-
     try:
-        client = make_client()
+        counts = draft_queued(limit, log=lambda level, msg: getattr(log, level)("  " + msg))
     except SystemExit as e:  # missing API key
         log.error("%s", e)
         return 1
-
-    consecutive = 0
-    for w in work:
-        try:
-            if w["drafted"]:
-                email = review_email_for(w["id"], client=client)
-            else:
-                email = draft_email_for(w["id"], client=client)
-        except Exception as e:
-            consecutive += 1
-            log.warning("  ✗ %s — %s", w["company"], friendly_api_error(e).splitlines()[0][:160])
-            if consecutive >= MAX_CONSECUTIVE_ERRORS:
-                log.error("Aborting after %d consecutive failures.", consecutive)
-                break
-            continue
-
-        review = email["review"]
-        if review.get("error"):
-            # The draft is stored; the review will be retried next run. Count it
-            # toward the abort, since it usually means the Anthropic side is down.
-            consecutive += 1
-            log.warning("  ~ %s — drafted, review failed: %s", w["company"],
-                        review["error"].splitlines()[0][:160])
-        else:
-            consecutive = 0
-            contact = (email.get("contact") or {}).get("email") or "no contact"
-            log.info("  ✓ %s — %d fix(es), %d rule(s) still broken, %s",
-                     w["company"], len(review["issues"]), len(review["remaining"]),
-                     contact)
-        if consecutive >= MAX_CONSECUTIVE_ERRORS:
-            log.error("Aborting after %d consecutive failures.", consecutive)
-            break
-        time.sleep(PACE_SECONDS)
+    if counts["total"]:
+        log.info("Done: %d ok, %d blocked, %d failed%s.", counts["ok"],
+                 counts["blocked"], counts["failed"],
+                 " (aborted)" if counts["aborted"] else "")
     return 0
 
 
@@ -127,15 +79,14 @@ def main() -> int:
 
     load_env()
     setup_logging(Path(args.log))
-    lock = acquire_lock(ROOT / ".draft_queued.lock")
+    lock = acquire_draft_lock()
     if lock is None:
         log.info("Another draft run is in progress; exiting.")
         return 0
     try:
         return run_once(args.limit, args.dry_run)
     finally:
-        fcntl.flock(lock, fcntl.LOCK_UN)
-        lock.close()
+        release_draft_lock(lock)
 
 
 if __name__ == "__main__":

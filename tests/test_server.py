@@ -366,3 +366,16 @@ def test_queue_endpoints(client):
 
 def test_blocked_endpoint(client):
     assert client.get("/api/outreach/blocked").json() == {"summary": [], "items": []}
+
+
+def test_draft_queued_endpoints(client, monkeypatch):
+    from prospector import service
+
+    def busy():
+        raise RuntimeError("A draft run is already in progress.")
+
+    monkeypatch.setattr(service, "start_draft_queued_async", busy)
+    assert client.post("/api/outreach/draft-queued").status_code == 409
+    monkeypatch.setattr(service, "start_draft_queued_async", lambda: {"running": True})
+    assert client.post("/api/outreach/draft-queued").json() == {"running": True}
+    assert "running" in client.get("/api/outreach/draft-status").json()

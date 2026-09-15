@@ -15,13 +15,14 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def temp_db(tmp_path, monkeypatch):
-    """Point the store at a fresh temp DB and set a dummy API key.
+    """Point the store (and the draft-job lock) at temp paths; set a dummy API key.
 
     The dummy key keeps config.make_client() from raising during the server
     lifespan (it only constructs the client object — no network call).
     """
-    from prospector import db
+    from prospector import db, service
 
+    monkeypatch.setattr(service, "DRAFT_LOCK", tmp_path / "draft.lock")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")

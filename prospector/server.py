@@ -205,6 +205,27 @@ def api_outreach():
     return db.outreach_stats()
 
 
+@app.post("/api/outreach/draft-queued")
+def api_draft_queued():
+    """Start drafting emails for the "to contact" queue in the background (the
+    same job as scripts/draft_queued.py). Returns the job status; poll
+    GET /api/outreach/draft-status. 409 if a draft run is already going."""
+    from .service import start_draft_queued_async
+    try:
+        return start_draft_queued_async()
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    except SystemExit as e:  # make_client() with no API key
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/outreach/draft-status")
+def api_draft_status():
+    """Progress of the dashboard-started draft job."""
+    from .service import draft_job_status
+    return draft_job_status()
+
+
 @app.get("/api/outreach/blocked")
 def api_outreach_blocked():
     """Unsent drafts that failed the review or the rule checks, with reasons."""

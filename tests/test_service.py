@@ -508,3 +508,73 @@ def _wait_until(pred, timeout=5.0):
             return
         time.sleep(0.02)
     raise AssertionError("condition not met before timeout")
+
+
+def test_draft_queued_drafts_new_and_rereviews_failed(monkeypatch):
+    fresh = db.insert_prospect(make_record("Fresh"))
+    failed = db.insert_prospect(make_record("Failed"))
+    for pid in (fresh, failed):
+        db.set_queued(pid, True)
+    db.set_prospect_email(failed, "s", "b", "spanish")
+    db.set_email_review(failed, {"issues": [], "remaining": [], "error": "down"})
+    calls = []
+
+    def fake_draft(pid, client=None):
+        calls.append(("draft", pid))
+        return {"review": {"issues": [], "remaining": [], "error": None}, "contact": None}
+
+    def fake_review(pid, client=None):
+        calls.append(("review", pid))
+        return {"review": {"issues": [], "remaining": [{"rule": "x", "detail": "y"}],
+                           "error": None}}
+
+    monkeypatch.setattr(service, "draft_email_for", fake_draft)
+    monkeypatch.setattr(service, "review_email_for", fake_review)
+    seen = []
+    counts = service.draft_queued(client=FakeClient(), pace=0,
+                                  on_progress=lambda c, cur: seen.append(cur))
+    assert calls == [("draft", fresh), ("review", failed)]
+    assert counts == {"total": 2, "done": 2, "ok": 1, "blocked": 1, "failed": 0,
+                      "aborted": False}
+    assert seen == ["Fresh", "Failed", None]
+
+
+def test_draft_queued_aborts_after_consecutive_failures(monkeypatch):
+    for n in range(5):
+        db.set_queued(db.insert_prospect(make_record(f"C{n}")), True)
+
+    def boom(pid, client=None):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(service, "draft_email_for", boom)
+    counts = service.draft_queued(client=FakeClient(), pace=0)
+    assert counts["failed"] == service.DRAFT_MAX_CONSECUTIVE_ERRORS
+    assert counts["aborted"] is True
+
+
+def test_start_draft_queued_async_refuses_when_locked():
+    lock = service.acquire_draft_lock()
+    try:
+        assert service.draft_job_status()["locked_elsewhere"] is True
+        with pytest.raises(RuntimeError):
+            service.start_draft_queued_async(client=FakeClient())
+    finally:
+        service.release_draft_lock(lock)
+    assert service.draft_job_status()["locked_elsewhere"] is False
+
+
+def test_start_draft_queued_async_runs_job(monkeypatch):
+    import time as _time
+    monkeypatch.setattr(service, "draft_queued",
+                        lambda limit, client=None, on_progress=None:
+                        on_progress({"total": 0, "done": 0, "ok": 0, "blocked": 0,
+                                     "failed": 0, "aborted": False}, None))
+    status = service.start_draft_queued_async(client=FakeClient())
+    assert status["running"] is True
+    for _ in range(50):
+        if not service.draft_job_status()["running"]:
+            break
+        _time.sleep(0.02)
+    final = service.draft_job_status()
+    assert final["running"] is False and final["error"] is None
+    assert final["locked_elsewhere"] is False   # lock released

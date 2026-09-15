@@ -9,7 +9,9 @@ server (server.py).
 - friendly_api_error(): translation of common API failures into actionable text.
 """
 
+import fcntl
 import threading
+import time
 from datetime import datetime, timezone
 
 import anthropic
@@ -25,6 +27,7 @@ from .agent import (
     suggest_niches,
 )
 from .config import (
+    ROOT,
     email_review_enabled,
     get_output_language,
     get_review_model,
@@ -337,6 +340,145 @@ def _persist_found(prospect_id: int, found: dict) -> dict:
                                    found.get("phone") or None,
                                    found.get("website") or None,
                                    found.get("source_url") or None)
+
+
+# --- Auto-draft the "to contact" queue ----------------------------------------
+# One job, two triggers: scripts/draft_queued.py (cron / terminal) and the
+# dashboard's "Draft now" button (start_draft_queued_async). Both take the same
+# file lock, so a cron run and a button press never draft the same queue twice.
+
+DRAFT_LOCK = ROOT / ".draft_queued.lock"
+DRAFT_PACE_SECONDS = 2.0          # gap between prospects (be gentle)
+DRAFT_MAX_CONSECUTIVE_ERRORS = 3  # abort the batch — the endpoint is likely down
+
+# Progress of the dashboard-started job, polled by GET /api/outreach/draft-status.
+# Only this process's job is tracked; a cron run shows up as the lock being held.
+_draft_job: dict = {"running": False}
+_draft_job_guard = threading.Lock()
+
+
+def acquire_draft_lock():
+    """Return an open, flock'd file handle, or None if a draft run holds it."""
+    fh = open(DRAFT_LOCK, "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fh.close()
+        return None
+    return fh
+
+
+def release_draft_lock(fh) -> None:
+    fcntl.flock(fh, fcntl.LOCK_UN)
+    fh.close()
+
+
+def draft_queued(limit: int = 10, client: anthropic.Anthropic | None = None,
+                 log=None, on_progress=None, pace: float = DRAFT_PACE_SECONDS) -> dict:
+    """Draft + review emails for up to `limit` queued prospects. Caller holds the lock.
+
+    Never-drafted prospects get a full draft (draft_email_for); ones whose review
+    failed last time only get the review re-run (review_email_for). `log(level,
+    msg)` receives one line per prospect; `on_progress(counts, current)` is called
+    before each prospect and once at the end with current=None. A burst of
+    consecutive failures (including failed reviews — usually the Anthropic side
+    being down) aborts the batch. Returns {'total','done','ok','blocked','failed',
+    'aborted'}; 'blocked' drafts were stored but failed review or rule checks.
+    """
+    log = log or (lambda level, msg: None)
+    work = db.queued_needing_draft(limit)
+    counts = {"total": len(work), "done": 0, "ok": 0, "blocked": 0, "failed": 0,
+              "aborted": False}
+    if not work:
+        log("info", "Queue empty — nothing to draft.")
+        return counts
+    client = client or make_client()
+    consecutive = 0
+    for i, w in enumerate(work):
+        if on_progress:
+            on_progress(counts, w["company"])
+        try:
+            if w["drafted"]:
+                email = review_email_for(w["id"], client=client)
+            else:
+                email = draft_email_for(w["id"], client=client)
+        except Exception as e:
+            consecutive += 1
+            counts["failed"] += 1
+            log("warning", f"✗ {w['company']} — {friendly_api_error(e).splitlines()[0][:160]}")
+        else:
+            review = email["review"]
+            if review.get("error"):
+                consecutive += 1
+                counts["blocked"] += 1
+                log("warning", f"~ {w['company']} — drafted, review failed: "
+                               f"{review['error'].splitlines()[0][:160]}")
+            else:
+                consecutive = 0
+                counts["blocked" if review["remaining"] else "ok"] += 1
+                contact = (email.get("contact") or {}).get("email") or "no contact"
+                log("info", f"✓ {w['company']} — {len(review['issues'])} fix(es), "
+                            f"{len(review['remaining'])} rule(s) still broken, {contact}")
+        counts["done"] += 1
+        if consecutive >= DRAFT_MAX_CONSECUTIVE_ERRORS:
+            counts["aborted"] = True
+            log("error", f"Aborting after {consecutive} consecutive failures.")
+            break
+        if i < len(work) - 1:
+            time.sleep(pace)
+    if on_progress:
+        on_progress(counts, None)
+    return counts
+
+
+def start_draft_queued_async(limit: int = 10,
+                             client: anthropic.Anthropic | None = None) -> dict:
+    """Run draft_queued on a background thread for the dashboard. Returns the
+    initial job status. Raises RuntimeError if a draft run (this process's, or a
+    cron/terminal one) is already going, SystemExit if the API key is missing."""
+    with _draft_job_guard:
+        if _draft_job.get("running"):
+            raise RuntimeError("A draft run is already in progress.")
+        lock = acquire_draft_lock()
+        if lock is None:
+            raise RuntimeError("A draft run (cron or terminal) is already in progress.")
+        try:
+            client = client or make_client()
+        except SystemExit:
+            release_draft_lock(lock)
+            raise
+        _draft_job.clear()
+        _draft_job.update(running=True, total=0, done=0, ok=0, blocked=0, failed=0,
+                          aborted=False, current=None, error=None,
+                          started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                          finished_at=None)
+
+    def progress(counts, current):
+        _draft_job.update(counts, current=current)
+
+    def work():
+        try:
+            draft_queued(limit, client=client, on_progress=progress)
+        except Exception as e:  # unexpected — surface it instead of a stuck job
+            _draft_job["error"] = friendly_api_error(e)
+        finally:
+            release_draft_lock(lock)
+            _draft_job.update(running=False, current=None,
+                              finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+
+    threading.Thread(target=work, daemon=True).start()
+    return draft_job_status()
+
+
+def draft_job_status() -> dict:
+    """The dashboard job's progress, plus whether another run holds the lock."""
+    status = dict(_draft_job)
+    if not status.get("running"):
+        lock = acquire_draft_lock()
+        status["locked_elsewhere"] = lock is None
+        if lock is not None:
+            release_draft_lock(lock)
+    return status
 
 
 # --- Gmail outreach: send + reply tracking -----------------------------------

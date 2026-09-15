@@ -354,6 +354,8 @@
   .oblocked .bl-reasons li:hover { background: none; }
   .oblocked .bl-reasons b { font-family: var(--mono); font-size: 11px; color: var(--tier-d); font-weight: 600; }
   .oqueue li { cursor: pointer; }
+  .draft-prog { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .draft-prog.on { color: var(--accent-ink); }
   .oqueue li:hover { background: var(--surface-2); }
   .oblocked .orecent > li:hover { background: var(--surface-2); }
   .oqueue .subj { color: var(--ink-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis;
@@ -574,7 +576,12 @@
     </div>
 
     <div class="panel">
-      <h2>To contact</h2>
+      <div style="display:flex;align-items:baseline;gap:12px">
+        <h2>To contact</h2>
+        <span class="draft-prog" id="draftProgress"></span>
+        <span style="flex:1"></span>
+        <button class="icon-btn primary" id="draftNowBtn" title="Write and review emails for marked companies (nothing is sent)">✎ Draft now</button>
+      </div>
       <ul class="orecent oqueue" id="o-queue"></ul>
     </div>
 
@@ -680,6 +687,9 @@ async function loadOutreach(){
   loadGmailStatus();
   loadQueue();
   loadBlocked();
+  // Pick up a job already running (e.g. started before a reload).
+  fetch("/api/outreach/draft-status").then(r=>r.json()).then(j => {
+    drawDraftJob(j); if (j.running || j.locked_elsewhere) watchDraftJob(); }).catch(()=>{});
   let s;
   try { s = await fetch("/api/outreach").then(r=>r.json()); }
   catch { toast("Couldn't load outreach stats."); return; }
@@ -725,6 +735,47 @@ async function loadQueue(){
     li.onclick = () => openDrawer(r.id);
     host.appendChild(li);
   }
+}
+
+// "Draft now": runs the auto-draft job server-side, polling its progress and
+// refreshing the queue + blocked lists as each email lands.
+let draftPoll = null;
+$("#draftNowBtn").onclick = async () => {
+  const btn = $("#draftNowBtn"); btn.disabled = true;
+  try {
+    const res = await fetch("/api/outreach/draft-queued", {method:"POST"});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    drawDraftJob(await res.json());
+    watchDraftJob(true);
+  } catch (e){ toast("Couldn't start drafting: " + e.message); btn.disabled = false; }
+};
+function drawDraftJob(j){
+  const prog = $("#draftProgress"), btn = $("#draftNowBtn");
+  prog.classList.toggle("on", !!j.running);
+  if (j.running){
+    btn.disabled = true; btn.textContent = "✎ Drafting…";
+    prog.textContent = j.total ? `${j.done}/${j.total}${j.current ? " · " + j.current : ""}` : "starting…";
+  } else {
+    btn.disabled = !!j.locked_elsewhere; btn.textContent = "✎ Draft now";
+    prog.textContent = j.locked_elsewhere ? "a cron/terminal draft run is in progress" : "";
+  }
+}
+async function watchDraftJob(started = false){
+  clearInterval(draftPoll);
+  let lastDone = -1, ours = started;          // started here -> summarize at the end
+  draftPoll = setInterval(async () => {
+    let j; try { j = await fetch("/api/outreach/draft-status").then(r=>r.json()); } catch { return; }
+    drawDraftJob(j);
+    if (j.done !== lastDone){ lastDone = j.done; loadQueue(); loadBlocked(); }
+    if (j.running){ ours = true; return; }
+    if (j.locked_elsewhere) return;          // cron/terminal run: wait it out
+    clearInterval(draftPoll);
+    loadQueue(); loadBlocked();
+    if (!ours) return;                       // not our job — no summary to show
+    if (j.error) toast("Drafting failed: " + j.error);
+    else if (!j.total) toast("Nothing to draft — every marked company already has a reviewed draft.");
+    else toast(`Drafted ${j.done}: ${j.ok} ready, ${j.blocked} blocked, ${j.failed} failed` + (j.aborted ? " (stopped early — endpoint down?)" : "") + ".");
+  }, 2500);
 }
 
 // Drafts that failed the review or rule checks, with reasons. Rule chips count
