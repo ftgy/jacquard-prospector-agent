@@ -603,6 +603,14 @@ def set_prospect_email(prospect_id: int, subject: str, body: str,
         return cur.rowcount > 0
 
 
+def set_email_subject(prospect_id: int, subject: str) -> bool:
+    """Replace just the stored draft's subject (the body is left as drafted)."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET email_subject=? WHERE id=?", (subject, prospect_id))
+        return cur.rowcount > 0
+
+
 def set_email_review(prospect_id: int, review: dict | None) -> bool:
     """Store the review of the current draft (see service._review_draft)."""
     with _connect() as conn:

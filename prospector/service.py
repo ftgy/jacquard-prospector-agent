@@ -20,6 +20,7 @@ from . import db, gmailer
 from .agent import (
     categorize_niche,
     discover_candidates,
+    draft_email_subject,
     draft_outreach_email,
     find_contact,
     review_outreach_email,
@@ -233,6 +234,35 @@ def draft_email_for(prospect_id: int, language: str | None = None,
     email = _store_reviewed(prospect_id, rec, draft, language, client)
     email["contact"] = _resolve_contact(prospect_id, rec, client)
     return email
+
+
+def redraft_subject_for(prospect_id: int, body: str | None = None,
+                        subject: str | None = None,
+                        client: anthropic.Anthropic | None = None) -> dict:
+    """Write a new subject for a prospect's drafted email and store it.
+
+    `body`/`subject` are what's in the editor (unsent edits included), else the
+    stored draft. Only the subject is saved; the stored review's `remaining`
+    rule findings are refreshed so the queue status tracks the new subject.
+    Returns {'subject', 'remaining'}. Raises LookupError if the prospect is
+    gone, ValueError if there's no draft yet.
+    """
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    email = rec.get("email")
+    if not email or not (body or email.get("body")):
+        raise ValueError("No drafted email yet — draft one first.")
+    body = body if body is not None else email.get("body", "")
+    current = subject if subject is not None else email.get("subject", "")
+    language = email.get("language") or get_output_language()
+    new = draft_email_subject(client or make_client(), rec, body, ICP, language, current)
+    db.set_email_subject(prospect_id, new)
+    remaining = lint_email(new, email.get("body", ""), language)
+    review = email.get("review")
+    if review:
+        db.set_email_review(prospect_id, {**review, "remaining": remaining})
+    return {"subject": new, "remaining": remaining}
 
 
 def review_email_for(prospect_id: int,

@@ -751,6 +751,42 @@ def draft_outreach_email(client: anthropic.Anthropic, record: dict, icp: str,
     )
 
 
+SUBJECT_SCHEMA = {
+    "type": "object",
+    "properties": {"subject": EMAIL_SCHEMA["properties"]["subject"]},
+    "required": ["subject"],
+    "additionalProperties": False,
+}
+
+
+def draft_email_subject(client: anthropic.Anthropic, record: dict, body: str,
+                        icp: str, language: str | None = None,
+                        current: str = "") -> str:
+    """Write a fresh subject line for an existing email body, leaving the body alone.
+
+    Same brief and provider (EMAIL_PROVIDER) as draft_outreach_email, so the
+    subject rules match; `current` is the subject being replaced, passed so the
+    model offers a genuinely different option.
+    """
+    system = _email_system(icp, language or get_output_language())
+    ask = ("The email body below is final. Write ONLY a new subject line for it, "
+           "following the brief's subject rules, grounded in the same one task the "
+           "body leads with.")
+    if current.strip():
+        ask += f" Give a clearly different option from the current subject: {current!r}."
+    ask += ("\n\n=== PROSPECT ===\n" + _email_context(record)
+            + "\n\n=== EMAIL BODY ===\n" + body)
+    if get_email_provider() == "deepseek":
+        out = _structure_openai(
+            make_deepseek_client(), system, ask, SUBJECT_SCHEMA,
+            max_tokens=300, model=get_deepseek_model(),
+        )
+    else:
+        out = _structure(client, system, ask, SUBJECT_SCHEMA,
+                         max_tokens=300, model=get_email_model())
+    return out["subject"].strip()
+
+
 # --- Stage 3b: review the draft against the playbook -------------------------
 
 REVIEW_SCHEMA = {

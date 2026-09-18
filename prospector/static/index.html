@@ -290,6 +290,7 @@
   input.subjtext:hover { border-color: var(--hairline); }
   input.subjtext:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
     outline-offset: 0; border-color: var(--accent); background: var(--surface); }
+  .email-subj .subj-redo { flex-shrink: 0; padding: 3px 9px; font-size: 12px; }
   textarea.email-body { width: 100%; min-height: 220px; resize: vertical; font-family: inherit; font-size: 13px;
     line-height: 1.6; color: var(--ink); background: var(--surface-2); border: 1px solid var(--hairline);
     border-radius: 10px; padding: 12px 14px; }
@@ -1274,7 +1275,23 @@ function renderEmail(id, out, email, sends){
   const subjInput = el("input", "subjtext");
   subjInput.type = "text"; subjInput.value = email.subject || "";
   subjInput.placeholder = "Subject line…";
-  subjWrap.appendChild(subjInput);
+  // New subject only: written against the body as it is in the editor now.
+  const redo = el("button", "icon-btn subj-redo", "↻ New subject");
+  redo.title = "Write a new subject for this email (the body stays as it is)";
+  redo.onclick = async () => {
+    redo.disabled = true; const was = redo.textContent; redo.textContent = "Drafting…";
+    try {
+      const res = await fetch(`/api/prospects/${id}/email/subject`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ subject: subjInput.value, body: ta.value })});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      const data = await res.json();
+      subjInput.value = email.subject = data.subject;
+      refreshAfterDrawerChange();
+    } catch (e){ toast("Couldn't draft a subject: " + e.message); }
+    finally { redo.disabled = false; redo.textContent = was; }
+  };
+  subjWrap.append(subjInput, redo);
   wrap.appendChild(subjWrap);
   const ta = el("textarea", "email-body"); ta.value = email.body;
   const actions = el("div", "email-actions");

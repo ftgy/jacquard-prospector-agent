@@ -77,6 +77,27 @@ def test_set_notes_missing_prospect_404(client):
     assert client.put("/api/prospects/9999/notes", json={"notes": "x"}).status_code == 404
 
 
+def test_redraft_subject_endpoint(client, monkeypatch):
+    from prospector import service
+    calls = {}
+
+    def fake(pid, body, subject):
+        calls.update(pid=pid, body=body, subject=subject)
+        return {"subject": "New one", "remaining": []}
+
+    monkeypatch.setattr(service, "redraft_subject_for", fake)
+    pid = db.insert_prospect(make_record("Acme"))
+    r = client.post(f"/api/prospects/{pid}/email/subject",
+                    json={"subject": "Old", "body": "Edited body"})
+    assert r.status_code == 200 and r.json()["subject"] == "New one"
+    assert calls == {"pid": pid, "body": "Edited body", "subject": "Old"}
+
+    def no_draft(pid, body, subject):
+        raise ValueError("No drafted email yet")
+    monkeypatch.setattr(service, "redraft_subject_for", no_draft)
+    assert client.post(f"/api/prospects/{pid}/email/subject").status_code == 400
+
+
 def test_draft_email_endpoint(client, monkeypatch):
     from prospector import service
     calls = {}

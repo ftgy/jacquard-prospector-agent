@@ -578,3 +578,35 @@ def test_start_draft_queued_async_runs_job(monkeypatch):
     final = service.draft_job_status()
     assert final["running"] is False and final["error"] is None
     assert final["locked_elsewhere"] is False   # lock released
+
+
+def test_redraft_subject_keeps_body_and_refreshes_lint(monkeypatch):
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "Automatizar el enrutado", "Hola,\n\nCuerpo.", "spanish")
+    db.set_email_review(pid, {"issues": [], "error": None,
+                              "remaining": [{"rule": "subject", "detail": "x"}]})
+    seen = {}
+
+    def fake(client, rec, body, icp, language, current):
+        seen.update(body=body, language=language, current=current)
+        return "¿Sigue alguien asignando leads a mano?"
+
+    monkeypatch.setattr(service, "draft_email_subject", fake)
+    out = service.redraft_subject_for(pid, body="Editado.", client=object())
+    assert out["subject"] == "¿Sigue alguien asignando leads a mano?"
+    # the editor's body steers the subject; the old subject is passed to avoid repeats
+    assert seen == {"body": "Editado.", "language": "spanish",
+                    "current": "Automatizar el enrutado"}
+    email = db.get_prospect(pid)["email"]
+    assert email["subject"] == out["subject"]
+    assert email["body"] == "Hola,\n\nCuerpo."          # stored body untouched
+    assert email["review"]["remaining"] == out["remaining"]
+    assert not any(f["rule"] == "subject" for f in out["remaining"])  # old subject flag gone
+
+
+def test_redraft_subject_needs_a_draft():
+    pid = db.insert_prospect(make_record("Acme"))
+    with pytest.raises(ValueError):
+        service.redraft_subject_for(pid, client=object())
+    with pytest.raises(LookupError):
+        service.redraft_subject_for(9999, client=object())
