@@ -52,18 +52,6 @@
   ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
   .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 80px; }
 
-  /* masthead */
-  header.mast { border-bottom: 1px solid var(--hairline); background: var(--surface);
-                position: sticky; top: 0; z-index: 20; }
-  .mast-in { max-width: 1180px; margin: 0 auto; padding: 14px 24px;
-             display: flex; align-items: center; gap: 16px; }
-  .brand { display: flex; align-items: baseline; gap: 10px; }
-  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--tier-a);
-                box-shadow: 0 0 0 3px color-mix(in srgb, var(--tier-a) 22%, transparent);
-                align-self: center; }
-  .brand h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
-  .brand .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .02em; }
-  .mast-spacer { flex: 1; }
   .icon-btn { background: var(--surface-2); border: 1px solid var(--hairline); color: var(--ink-2);
               border-radius: 8px; padding: 7px 11px; cursor: pointer; font-size: 13px;
               display: inline-flex; align-items: center; gap: 7px; }
@@ -72,9 +60,10 @@
   .icon-btn.primary:hover { filter: brightness(1.06); }
   .icon-btn:disabled { opacity: .55; cursor: default; }
 
-  /* tab bar */
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--hairline);
-          margin: 22px 0 20px; }
+  /* tab bar: the main tabs, with the theme toggle on the right */
+  .tabbar { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--hairline);
+            margin: 22px 0 20px; }
+  .tabs { display: flex; gap: 4px; flex: 1; }
   .tabs button { background: none; border: 0; border-bottom: 2px solid transparent;
                  color: var(--ink-2); padding: 10px 14px; cursor: pointer; font-size: 14px;
                  font-weight: 500; margin-bottom: -1px; display: inline-flex; align-items: center; gap: 8px; }
@@ -473,26 +462,21 @@
     .stat.dist { grid-column: 1 / -1; }
     .group-meta { margin-left: 0; }
   }
+  @media (max-width: 520px) {
+    .tabs button { padding: 10px 9px; }
+    #themeBtn .lbl { display: none; }
+  }
 </style>
 
-<header class="mast">
-  <div class="mast-in">
-    <div class="brand">
-      <span class="dot"></span><h1>Prospector</h1>
-      <span class="sub">qualification console</span>
-    </div>
-    <div class="mast-spacer"></div>
-    <button class="icon-btn" id="themeBtn" title="Toggle theme">◐ Theme</button>
-    <button class="icon-btn" id="refreshBtn" title="Refresh">↻ Refresh</button>
-  </div>
-</header>
-
 <div class="wrap">
-  <nav class="tabs" id="tabs">
-    <button data-tab="niches">Niches</button>
-    <button data-tab="research">Research</button>
-    <button data-tab="outreach">Outreach</button>
-  </nav>
+  <div class="tabbar">
+    <nav class="tabs" id="tabs">
+      <button data-tab="niches">Niches</button>
+      <button data-tab="research">Research</button>
+      <button data-tab="outreach">Outreach</button>
+    </nav>
+    <button class="icon-btn" id="themeBtn" title="Toggle theme">◐<span class="lbl"> Theme</span></button>
+  </div>
 
   <!-- filters (research result views only; relocated into the active view on switch) -->
   <div class="filters" id="filters">
@@ -1689,10 +1673,6 @@ $("#minScore").oninput = e => { state.minScore = +e.target.value; $("#minScoreV"
 $("#minScore").onchange = () => renderGroups(state.tab);
 let searchT; $("#search").oninput = e => { clearTimeout(searchT); state.q = e.target.value.trim();
   searchT = setTimeout(() => renderGroups(state.tab), 200); };
-$("#refreshBtn").onclick = () => {
-  if (RESEARCH_VIEWS.includes(state.tab)) loadStats();
-  if (isResultsView(state.tab)) loadGroups(state.tab);
-};
 
 // --- niche suggestion (tab 1) ---
 $("#nicheBtn").onclick = async () => {
