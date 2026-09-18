@@ -635,7 +635,7 @@ def set_email_review(prospect_id: int, review: dict | None) -> bool:
 
 
 def set_draft_language(prospect_id: int, language: str) -> bool:
-    """Pick the language the prospect's next draft is written in (Pipeline)."""
+    """Pick the language the prospect's next draft is written in (drawer)."""
     with _connect() as conn:
         cur = conn.execute("UPDATE prospects SET draft_lang=? WHERE id=?",
                            (language, prospect_id))
@@ -745,8 +745,7 @@ def active_contacts() -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, company, tier, fit_score, queued_at, email_subject, email_at, "
-            "contact_email, email_review, sent_at, replied_at, draft_lang, email_lang "
-            "FROM prospects "
+            "contact_email, email_review, sent_at, replied_at FROM prospects "
             "WHERE (queued_at IS NOT NULL OR sent_at IS NOT NULL) AND error IS NULL "
             "ORDER BY sent_at IS NOT NULL, "
             "CASE WHEN sent_at IS NULL THEN queued_at END, sent_at DESC, id",
@@ -771,9 +770,6 @@ def active_contacts() -> list[dict]:
             "contact_email": r["contact_email"], "status": status,
             "fixes": len((review or {}).get("issues") or []),
             "sent_at": r["sent_at"], "replied_at": r["replied_at"],
-            # next draft's language: the pick, else the current draft's; None
-            # means the global default (the API fills it in)
-            "language": r["draft_lang"] or r["email_lang"],
         })
     return out
 

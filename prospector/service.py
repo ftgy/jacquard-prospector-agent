@@ -209,6 +209,13 @@ def suggest_niches_for(location: str, count: int = 8,
     return suggest_niches(client, location, ICP, count)
 
 
+def next_draft_language(rec: dict) -> str:
+    """The language a prospect's next draft is written in: the drawer's pick
+    (draft_lang), else the current draft's language, else OUTPUT_LANGUAGE."""
+    return (rec.get("draft_lang") or (rec.get("email") or {}).get("language")
+            or get_output_language())
+
+
 def draft_email_for(prospect_id: int, language: str | None = None,
                     client: anthropic.Anthropic | None = None) -> dict:
     """Draft, review, and store an outreach email for one prospect. Returns
@@ -218,8 +225,7 @@ def draft_email_for(prospect_id: int, language: str | None = None,
     the playbook checks + Claude review over it (see _review_draft), stores the
     reviewed text, then looks up where to send it (the contact search only runs
     once — a stored contact is reused across regenerations). `language` is
-    'english' or 'spanish'; None uses the prospect's Pipeline pick (draft_lang),
-    else the current draft's language, else the global config.OUTPUT_LANGUAGE.
+    'english' or 'spanish'; None uses next_draft_language.
     Raises LookupError if the prospect is gone, ValueError if it's a
     failed-research row.
     """
@@ -229,8 +235,7 @@ def draft_email_for(prospect_id: int, language: str | None = None,
     if rec.get("error"):
         raise ValueError("This entry is a failed research record — there's nothing "
                          "to write an email from.")
-    language = (language or rec.get("draft_lang")
-                or (rec.get("email") or {}).get("language") or get_output_language())
+    language = language or next_draft_language(rec)
     client = client or make_client()
     draft = draft_outreach_email(client, rec, ICP, language)
     email = _store_reviewed(prospect_id, rec, draft, language, client)

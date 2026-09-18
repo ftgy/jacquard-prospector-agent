@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import db
-from .config import describe_target, get_output_language, load_env, make_client
+from .config import describe_target, load_env, make_client
 
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
@@ -115,10 +115,11 @@ def api_prospects(tier: str | None = None, min_score: int | None = None,
 
 @app.get("/api/prospects/{prospect_id}")
 def api_prospect(prospect_id: int):
+    from .service import next_draft_language
     rec = db.get_prospect(prospect_id)
     if not rec:
         raise HTTPException(404, "prospect not found")
-    return rec
+    return {**rec, "next_language": next_draft_language(rec)}
 
 
 @app.delete("/api/prospects/{prospect_id}")
@@ -137,8 +138,8 @@ def api_set_notes(prospect_id: int, req: NotesRequest):
 
 @app.put("/api/prospects/{prospect_id}/language")
 def api_set_language(prospect_id: int, req: LanguageRequest):
-    """Pick the language the prospect's next draft is written in (the Pipeline
-    selector). The current draft is left as it is until it's redrafted."""
+    """Pick the language the prospect's next draft is written in (the drawer's
+    EN/ES switch). The current draft is left as it is until it's redrafted."""
     if not db.set_draft_language(prospect_id, req.language):
         raise HTTPException(404, "prospect not found")
     return {"id": prospect_id, "language": req.language}
@@ -323,8 +324,7 @@ def api_outreach_blocked():
 def api_outreach_active():
     """The pipeline: queued-but-unsent prospects plus everyone already emailed,
     with draft status and last send."""
-    default = get_output_language()
-    return [{**r, "language": r["language"] or default} for r in db.active_contacts()]
+    return db.active_contacts()
 
 
 @app.post("/api/outreach/refresh-replies")

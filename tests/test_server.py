@@ -447,11 +447,12 @@ def test_set_language_endpoint(client, monkeypatch):
     from tests.conftest import make_record
     monkeypatch.setenv("OUTPUT_LANGUAGE", "spanish")
     pid = db.insert_prospect(make_record("Acme"))
-    db.set_queued(pid, True)
-    assert client.get("/api/outreach/active").json()[0]["language"] == "spanish"  # default
+    assert client.get(f"/api/prospects/{pid}").json()["next_language"] == "spanish"  # default
+    db.set_prospect_email(pid, "s", "b", "english")
+    assert client.get(f"/api/prospects/{pid}").json()["next_language"] == "english"  # the draft's
     assert client.put(f"/api/prospects/{pid}/language",
-                      json={"language": "english"}).json()["language"] == "english"
-    assert client.get("/api/outreach/active").json()[0]["language"] == "english"
+                      json={"language": "spanish"}).json()["language"] == "spanish"
+    assert client.get(f"/api/prospects/{pid}").json()["next_language"] == "spanish"  # the pick
     assert client.put(f"/api/prospects/{pid}/language",
                       json={"language": "french"}).status_code == 422
     assert client.put("/api/prospects/9999/language",

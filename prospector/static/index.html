@@ -265,6 +265,11 @@
   /* outreach email */
   .email-gen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .email-none { color: var(--muted); font-size: 13px; }
+  .lang-seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
+  .lang-opt { background: var(--surface-2); border: 0; color: var(--ink-2); padding: 7px 12px; cursor: pointer;
+    font-size: 12px; font-family: var(--mono); }
+  .lang-opt + .lang-opt { border-left: 1px solid var(--hairline); }
+  .lang-opt.on { background: var(--accent); color: #fff; }
   .email-out { margin-top: 12px; }
   .email-saved { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 8px; }
   .email-draft .email-subj { display: flex; gap: 10px; align-items: center; padding: 9px 12px;
@@ -355,10 +360,7 @@
   .otable th.sorted.asc::after { content: "↑"; opacity: 1; }
   .otable th.sorted.desc::after { content: "↓"; opacity: 1; }
   .otable .pick { width: 1%; padding-right: 0; }
-  .otable select.lang { font-family: var(--mono); font-size: 11.5px; color: var(--ink); cursor: pointer;
-    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 6px; padding: 3px 6px; }
-  .otable select.lang:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
-    border-color: var(--accent); }
+
   .otable .pick input { cursor: pointer; accent-color: var(--accent); width: 15px; height: 15px; vertical-align: middle; }
   .oqueue .qstat.sent { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
   .drawer.email-only .dhead .fit, .drawer.email-only .dfoot { display: none; }
@@ -600,7 +602,7 @@
         <button class="icon-btn" id="sendAllBtn" title="Send the drafts of the ticked companies, or every draft that's ready to send if none are ticked (asks first)">➤ Send all</button>
       </div>
       <div class="scroll"><table class="otable oqueue">
-        <thead><tr><th class="pick"><input type="checkbox" id="o-pick-all" title="Select all unsent"></th><th class="sortable" data-sort="company">Company</th><th class="sortable" data-sort="contact">Contact</th><th class="sortable" data-sort="lang">Language</th><th class="sortable" data-sort="draft">Draft</th><th class="sortable" data-sort="sent">Last sent</th><th class="sortable" data-sort="reply">Reply</th></tr></thead>
+        <thead><tr><th class="pick"><input type="checkbox" id="o-pick-all" title="Select all unsent"></th><th class="sortable" data-sort="company">Company</th><th class="sortable" data-sort="contact">Contact</th><th class="sortable" data-sort="draft">Draft</th><th class="sortable" data-sort="sent">Last sent</th><th class="sortable" data-sort="reply">Reply</th></tr></thead>
         <tbody id="o-active"></tbody>
       </table></div>
     </div>
@@ -797,7 +799,6 @@ const QUEUE_ORDER = ["ready", "needs-review", "no-contact", "waiting", "sent"];
 const ACTIVE_SORT_KEYS = {
   company: r => (r.company || "").toLowerCase() || null,
   contact: r => (r.contact_email || "").toLowerCase() || null,
-  lang:    r => r.language || null,
   draft:   r => { const i = QUEUE_ORDER.indexOf(r.status); return i < 0 ? QUEUE_ORDER.length : i; },
   sent:    r => r.sent_at || null,
   reply:   r => r.replied_at ? 0 : r.sent_at ? 1 : null,
@@ -838,7 +839,7 @@ function drawActive(){
   for (const id of [...picked]) if (!pickable.includes(id)) picked.delete(id);
   drawPicks();
   if (!q.length){
-    host.appendChild(el("tr", null, "<td class='empty' colspan='7'>Nothing here yet — mark companies “to contact” with the ☆ in the research tables.</td>"));
+    host.appendChild(el("tr", null, "<td class='empty' colspan='6'>Nothing here yet — mark companies “to contact” with the ☆ in the research tables.</td>"));
     return;
   }
   for (const r of sortedActive()){
@@ -851,12 +852,10 @@ function drawActive(){
       <td class="pick"></td>
       <td class="co">${esc(r.company)}<span class="line">${esc(r.subject || "")}</span></td>
       <td><span class="to">${esc(r.contact_email || "—")}</span></td>
-      <td class="lang"></td>
       <td><span class="qstat ${esc(r.status)}">${esc(QUEUE_LABEL[r.status] || r.status)}</span>${
         r.fixes && r.status !== "sent" ? `<span class="fixes">${esc(plural(r.fixes, "fix", "fixes"))}</span>` : ""}</td>
       <td>${sent}</td>
       <td>${reply}</td>`;
-    tr.querySelector("td.lang").appendChild(langCell(r));
     if (r.status !== "sent"){
       const cb = el("input"); cb.type = "checkbox"; cb.checked = picked.has(r.id);
       cb.title = "Select to draft";
@@ -868,31 +867,6 @@ function drawActive(){
     tr.onclick = () => openDrawer(r.id, {emailOnly: true});
     host.appendChild(tr);
   }
-}
-
-// Language the next draft is written in. Unsent rows get a selector (saved as
-// you pick; the current draft changes only when redrafted); sent rows just
-// show it.
-const LANGS = { english: "EN", spanish: "ES" };
-function langCell(r){
-  if (r.status === "sent") return el("span", "to", LANGS[r.language] || "—");
-  const sel = el("select", "lang");
-  sel.title = "Language for the next draft";
-  for (const [val, label] of Object.entries(LANGS)){
-    const o = el("option", null, label); o.value = val; sel.appendChild(o);
-  }
-  sel.value = r.language;
-  sel.onclick = e => e.stopPropagation();          // don't open the drawer
-  sel.onchange = async () => {
-    const was = r.language, language = sel.value;
-    try {
-      const res = await fetch(`/api/prospects/${r.id}/language`, {method:"PUT",
-        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ language })});
-      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
-      r.language = language;
-    } catch (e){ toast("Couldn't set the language: " + e.message); sel.value = was; }
-  };
-  return sel;
 }
 
 // "Draft all" / "Draft N selected": runs the auto-draft job server-side over the
@@ -1356,7 +1330,7 @@ async function openDrawer(id, opts = {}){
   if (isErr){
     body.appendChild(sec("Research failed", `<div class="errbox">${esc(r.error)}</div>`));
   } else if (emailOnly){
-    body.appendChild(emailSection(id, r.email, r.sends || [], !!r.queued_at));
+    body.appendChild(emailSection(id, r.email, r.sends || [], !!r.queued_at, r.next_language));
   } else {
     if (r.outreach_angle) body.appendChild(sec("Outreach angle", `<div class="angle">${esc(r.outreach_angle)}</div>`));
     if (r.pain_points?.length){
@@ -1380,7 +1354,7 @@ async function openDrawer(id, opts = {}){
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
 
-function emailSection(id, existing, sends, queued){
+function emailSection(id, existing, sends, queued, language){
   const s = el("div", "sec email");
   sends = sends || [];
   // "Remove" takes an unsent company off Active contacts (unmarks it "to
@@ -1403,8 +1377,30 @@ function emailSection(id, existing, sends, queued){
   if (existing) renderEmail(id, out, existing, sends);
   else out.appendChild(el("div", "email-none",
     "No draft yet — tick this company in Pipeline and use “Draft selected”."));
-  const genRow = el("div", "email-gen");
-  if (queued && !(existing && existing.sent_at)){ genRow.append(remove); s.append(genRow); }
+  // EN/ES: the language the next draft (from Pipeline) is written in. Saved on
+  // click; the current draft stays as it is until it's redrafted.
+  const seg = el("div", "lang-seg");
+  seg.title = "Language for the next draft";
+  for (const [val, label] of [["english", "EN"], ["spanish", "ES"]]){
+    const b = el("button", "lang-opt" + (val === language ? " on" : ""), label);
+    b.onclick = async () => {
+      if (val === language) return;
+      try {
+        const res = await fetch(`/api/prospects/${id}/language`, {method:"PUT",
+          headers:{"Content-Type":"application/json"}, body: JSON.stringify({ language: val })});
+        if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+        language = val;
+        seg.querySelectorAll(".lang-opt").forEach(x => x.classList.toggle("on", x === b));
+      } catch (e){ toast("Couldn't set the language: " + e.message); }
+    };
+    seg.appendChild(b);
+  }
+  if (!(existing && existing.sent_at)){
+    const genRow = el("div", "email-gen");
+    genRow.appendChild(seg);
+    if (queued) genRow.appendChild(remove);
+    s.append(genRow);
+  }
   s.append(out);
   return s;
 }
