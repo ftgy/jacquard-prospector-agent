@@ -1224,7 +1224,7 @@ function emailSection(id, existing, sends, queued){
   };
   seg.append(mkOpt("english", "EN"), mkOpt("spanish", "ES"));
 
-  const gen = el("button", "icon-btn primary", existing ? "✉ Regenerate" : "✉ Generate email");
+  const gen = el("button", "icon-btn primary", existing ? "✉ Re-draft" : "✉ Draft");
   const out = el("div", "email-out");
   if (existing) renderEmail(id, out, existing, sends);
   gen.onclick = async () => {
@@ -1234,13 +1234,13 @@ function emailSection(id, existing, sends, queued){
         headers:{"Content-Type":"application/json"}, body: JSON.stringify({ language: lang })});
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
       renderEmail(id, out, await res.json(), sends);
-      gen.textContent = "✉ Regenerate";
+      gen.textContent = "✉ Re-draft";
       refreshAfterDrawerChange();
-    } catch (e){ toast("Couldn't generate email: " + e.message); gen.textContent = was; }
+    } catch (e){ toast("Couldn't draft email: " + e.message); gen.textContent = was; }
     finally { gen.disabled = false; }
   };
   const genRow = el("div", "email-gen");
-  genRow.append(seg, gen, mark);
+  genRow.append(gen, seg, mark);
   s.append(genRow, out);
   return s;
 }
