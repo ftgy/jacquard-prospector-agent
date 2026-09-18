@@ -264,6 +264,7 @@
 
   /* outreach email */
   .email-gen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .email-gen .email-tools { display: contents; }
   .email-none { color: var(--muted); font-size: 13px; }
   .lang-seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
   .lang-opt { background: var(--surface-2); border: 0; color: var(--ink-2); padding: 7px 12px; cursor: pointer;
@@ -282,7 +283,6 @@
   input.subjtext:hover { border-color: var(--hairline); }
   input.subjtext:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
     outline-offset: 0; border-color: var(--accent); background: var(--surface); }
-  .email-subj .subj-redo { flex-shrink: 0; padding: 3px 9px; font-size: 12px; }
   textarea.email-body { width: 100%; min-height: 220px; resize: none; overflow: hidden; font-family: inherit; font-size: 13px;
     line-height: 1.6; color: var(--ink); background: var(--surface-2); border: 1px solid var(--hairline);
     border-radius: 10px; padding: 12px 14px; }
@@ -297,7 +297,6 @@
   .email-contact .contact-to:hover { text-decoration: underline; }
   .email-contact .contact-meta { font-size: 12px; color: var(--muted); flex-basis: 100%; }
   .email-contact .contact-empty { font-size: 12px; color: var(--muted); font-style: italic; }
-  .email-contact .contact-find { margin-left: auto; font-style: normal; padding: 5px 10px; font-size: 12px; }
   .email-contact.none { background: var(--surface-2); }
   .email-saved .sent-pill, .email-saved .reply-pill { display: inline-block; margin-left: 8px;
     padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
@@ -377,8 +376,7 @@
   .star.on { color: var(--accent); opacity: 1; }
 
   /* Outreach history timeline in the detail drawer. */
-  .email-body-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-  .email-autosave { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .email-autosave { font-family: var(--mono); font-size: 11px; color: var(--muted); min-height: 16px; margin-top: 4px; }
   .send-hist { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
   .send-hist > .hh { font-size: 11px; font-weight: 700; color: var(--muted);
     text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
@@ -1375,7 +1373,10 @@ function emailSection(id, existing, sends, queued, language){
   };
   // Drafting lives in Pipeline ("Draft all" / "Draft N selected"), not here.
   const out = el("div", "email-out");
-  if (existing) renderEmail(id, out, existing, sends);
+  // The toolbar's first slot holds the draft's own buttons (New contact info /
+  // subject / body); renderEmail fills it and refills it on every redraw.
+  const tools = el("span", "email-tools");
+  if (existing) renderEmail(id, out, existing, sends, tools);
   else out.appendChild(el("div", "email-none",
     "No draft yet — tick this company in Pipeline and use “Draft selected”."));
   // EN/ES: the language the next draft (from Pipeline) is written in. Saved on
@@ -1396,11 +1397,13 @@ function emailSection(id, existing, sends, queued, language){
     };
     seg.appendChild(b);
   }
-  if (!(existing && existing.sent_at)){
-    const genRow = el("div", "email-gen");
-    genRow.appendChild(seg);
-    if (queued) genRow.appendChild(remove);
-    s.append(genRow);
+  const unsent = !(existing && existing.sent_at);
+  if (existing || unsent){
+    const bar = el("div", "email-gen");
+    bar.appendChild(tools);
+    if (unsent) bar.appendChild(seg);
+    if (unsent && queued) bar.appendChild(remove);
+    s.append(bar);
   }
   s.append(out);
   return s;
@@ -1410,7 +1413,7 @@ function emailSection(id, existing, sends, queued, language){
 // so closing or switching the drawer mid-debounce never drops them.
 let flushEmailSave = null;
 
-function renderEmail(id, out, email, sends){
+function renderEmail(id, out, email, sends, tools){
   out.innerHTML = "";
   sends = sends || [];
   const wrap = el("div", "email-draft");
@@ -1440,7 +1443,7 @@ function renderEmail(id, out, email, sends){
   subjInput.type = "text"; subjInput.value = email.subject || "";
   subjInput.placeholder = "Subject line…";
   // New subject only: written against the body as it is in the editor now.
-  const redo = el("button", "icon-btn subj-redo", "↻ New subject");
+  const redo = el("button", "icon-btn", "↻ New subject");
   redo.title = "Write a new subject for this email (the body stays as it is)";
   redo.onclick = async () => {
     redo.disabled = true; const was = redo.textContent; redo.textContent = "Drafting…";
@@ -1456,7 +1459,7 @@ function renderEmail(id, out, email, sends){
     } catch (e){ toast("Couldn't draft a subject: " + e.message); }
     finally { redo.disabled = false; redo.textContent = was; }
   };
-  subjWrap.append(subjInput, redo);
+  subjWrap.append(subjInput);
   wrap.appendChild(subjWrap);
   const ta = el("textarea", "email-body"); ta.value = email.body;
   // Grow the body to fit its text, so the drawer is the only scrollbar.
@@ -1501,7 +1504,7 @@ function renderEmail(id, out, email, sends){
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
       const data = await res.json();
       renderEmail(id, out, {...email, contact, subject: data.subject, body: data.body,
-                            review: data.review}, sends);
+                            review: data.review}, sends, tools);
       refreshAfterDrawerChange();
     } catch (e){
       toast("Couldn't draft a new body: " + e.message);
@@ -1509,12 +1512,12 @@ function renderEmail(id, out, email, sends){
       queueSave();                              // keep any edits from before the click
     }
   };
-  const bodyRow = el("div", "email-body-row");
-  bodyRow.append(newBody, saveNote);
 
   function drawContact(){
     cardHost.innerHTML = "";
-    cardHost.appendChild(contactCard(id, contact, c => { contact = c; drawContact(); }));
+    const onFound = c => { contact = c; drawContact(); };
+    cardHost.appendChild(contactCard(contact));
+    contactSlot.replaceChildren(contactButton(id, contact, onFound));
   }
 
   // Full outreach history: every send kept, so resends don't erase the trail.
@@ -1546,11 +1549,15 @@ function renderEmail(id, out, email, sends){
     histHost.appendChild(h);
   }
 
+  // Toolbar: New contact info · New subject · New body (see emailSection).
+  const contactSlot = el("span", "email-tools");
+  tools.replaceChildren(contactSlot, redo, newBody);
+
   drawStatus();
   drawContact();
   drawHistory();
 
-  wrap.append(ta, bodyRow, histHost);
+  wrap.append(ta, saveNote, histHost);
   out.appendChild(wrap);
   requestAnimationFrame(fitBody);                // once it's in the drawer and has a width
 }
@@ -1613,9 +1620,9 @@ function refreshAfterDrawerChange(){
   else if (isResultsView(state.tab)) loadGroups(state.tab);
 }
 
-// A contact "Send to" card. `onFound` is called with the new contact (or null)
-// after an on-demand search, so the caller can re-render in place.
-function contactCard(id, contact, onFound){
+// A contact "Send to" card: the address, phone/website/source, or a note that
+// none was found. Searching is the toolbar's contactButton.
+function contactCard(contact){
   const found = contact && contact.email;
   const c = el("div", "email-contact" + (found ? "" : " none"));
 
@@ -1623,11 +1630,25 @@ function contactCard(id, contact, onFound){
     const addr = el("a", "contact-to", esc(contact.email));
     addr.href = "mailto:" + encodeURIComponent(contact.email);
     c.append(el("span", "k", "Send to"), addr);
+    const meta = [];
+    if (contact.phone) meta.push(esc(contact.phone));
+    if (contact.website){
+      let w = contact.website; if (!/^https?:/i.test(w)) w = "https://" + w;
+      meta.push(`<a href="${esc(w)}" target="_blank" rel="noopener">${esc(contact.website)}</a>`);
+    }
+    if (contact.source)
+      meta.push(`<a href="${esc(contact.source)}" target="_blank" rel="noopener">source</a>`);
+    if (meta.length) c.appendChild(el("span", "contact-meta", meta.join(" · ")));
   } else {
     c.appendChild(el("span", "contact-empty", "No contact address found."));
   }
+  return c;
+}
 
-  const btn = el("button", "icon-btn contact-find", found ? "↻ Re-search" : "🔍 Find contact");
+// The drawer toolbar's contact search: "New contact info" once one is known,
+// else "Find contact". `onFound` gets the new contact (or null) to redraw with.
+function contactButton(id, contact, onFound){
+  const btn = el("button", "icon-btn", contact && contact.email ? "↻ New contact info" : "🔍 Find contact");
   btn.onclick = async () => {
     btn.disabled = true; const was = btn.textContent; btn.textContent = "Searching…";
     try {
@@ -1640,20 +1661,7 @@ function contactCard(id, contact, onFound){
       onFound(data.contact || null);
     } catch (e){ toast("Contact search failed: " + e.message); btn.disabled = false; btn.textContent = was; }
   };
-  c.appendChild(btn);
-
-  if (found){
-    const meta = [];
-    if (contact.phone) meta.push(esc(contact.phone));
-    if (contact.website){
-      let w = contact.website; if (!/^https?:/i.test(w)) w = "https://" + w;
-      meta.push(`<a href="${esc(w)}" target="_blank" rel="noopener">${esc(contact.website)}</a>`);
-    }
-    if (contact.source)
-      meta.push(`<a href="${esc(contact.source)}" target="_blank" rel="noopener">source</a>`);
-    if (meta.length) c.appendChild(el("span", "contact-meta", meta.join(" · ")));
-  }
-  return c;
+  return btn;
 }
 
 function notesSection(id, notes){
