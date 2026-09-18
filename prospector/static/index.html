@@ -80,8 +80,6 @@
                  font-weight: 500; margin-bottom: -1px; display: inline-flex; align-items: center; gap: 8px; }
   .tabs button:hover { color: var(--ink); }
   .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
-  .tabs button .tnum { font-family: var(--mono); font-size: 11px; color: var(--muted);
-                       background: var(--surface-2); border-radius: 999px; padding: 1px 7px; }
 
   .tabpane { display: none; }
   .tabpane.on { display: block; }
@@ -493,7 +491,7 @@
   <nav class="tabs" id="tabs">
     <button data-tab="niches">Niches</button>
     <button data-tab="research">Research</button>
-    <button data-tab="outreach">Outreach <span class="tnum" id="cnt-outreach">0</span></button>
+    <button data-tab="outreach">Outreach</button>
   </nav>
 
   <!-- filters (research result views only; relocated into the active view on switch) -->
@@ -757,7 +755,6 @@ async function loadOutreach(){
   $("#o-total").textContent = s.total_sent;
   $("#o-replies").innerHTML = s.total_replied
     + (s.reply_rate != null ? `<small> · ${Math.round(s.reply_rate*100)}% rate</small>` : "");
-  $("#cnt-outreach").textContent = s.total_sent;
   renderBars(s.series || []);
 }
 
