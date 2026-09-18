@@ -278,7 +278,7 @@
   input.subjtext:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
     outline-offset: 0; border-color: var(--accent); background: var(--surface); }
   .email-subj .subj-redo { flex-shrink: 0; padding: 3px 9px; font-size: 12px; }
-  textarea.email-body { width: 100%; min-height: 220px; resize: vertical; font-family: inherit; font-size: 13px;
+  textarea.email-body { width: 100%; min-height: 220px; resize: none; overflow: hidden; font-family: inherit; font-size: 13px;
     line-height: 1.6; color: var(--ink); background: var(--surface-2); border: 1px solid var(--hairline);
     border-radius: 10px; padding: 12px 14px; }
   textarea.email-body:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
@@ -1452,6 +1452,8 @@ function renderEmail(id, out, email, sends){
   subjWrap.append(subjInput, redo);
   wrap.appendChild(subjWrap);
   const ta = el("textarea", "email-body"); ta.value = email.body;
+  // Grow the body to fit its text, so the drawer is the only scrollbar.
+  function fitBody(){ ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; }
 
   // Autosave hand edits to the subject/body: shortly after typing stops, on
   // blur, and on drawer close. The server re-runs the rule checks, so the
@@ -1473,7 +1475,8 @@ function renderEmail(id, out, email, sends){
     } catch (e){ saveNote.textContent = "Not saved — " + e.message; }
   }
   function queueSave(){ clearTimeout(saveT); saveT = setTimeout(saveEdits, 800); }
-  subjInput.oninput = ta.oninput = () => { saveNote.textContent = ""; queueSave(); };
+  subjInput.oninput = () => { saveNote.textContent = ""; queueSave(); };
+  ta.oninput = () => { fitBody(); saveNote.textContent = ""; queueSave(); };
   subjInput.onblur = ta.onblur = () => { if (saveT) saveEdits(); };
   flushEmailSave = () => { if (saveT) saveEdits(); };
 
@@ -1517,6 +1520,7 @@ function renderEmail(id, out, email, sends){
 
   wrap.append(ta, saveNote, histHost);
   out.appendChild(wrap);
+  requestAnimationFrame(fitBody);                // once it's in the drawer and has a width
 }
 
 // What the checks + Claude review did to the draft: fixes, rules still broken,
