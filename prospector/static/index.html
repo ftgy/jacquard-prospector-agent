@@ -383,6 +383,7 @@
   /* Outreach history timeline in the detail drawer. */
   .email-autosave { font-family: var(--mono); font-size: 11px; color: var(--muted); min-height: 16px; margin-top: 4px; }
   .send-hist { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .sec > .send-hist:first-child { margin-top: 0; border-top: 0; padding-top: 0; }
   .send-hist > .hh { font-size: 11px; font-weight: 700; color: var(--muted);
     text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
   .send-hist .sh { border-bottom: 1px solid var(--border); }
@@ -905,7 +906,7 @@ function drawSent(rows){
       <td><span class="to">${esc(r.contact_email || "—")}</span></td>
       <td><span class="when" title="Sent ${esc(r.sent_at.slice(0,10))}">${esc(relTime(r.sent_at))}</span></td>
       <td>${reply}</td>`;
-    tr.onclick = () => openDrawer(r.id, {emailOnly: true});
+    tr.onclick = () => openDrawer(r.id, {sentOnly: true});
     host.appendChild(tr);
   }
 }
@@ -1350,12 +1351,13 @@ function starButton(r){
 
 // --- detail drawer ---
 // The full drawer is research only; opts.emailOnly (from the Outreach tab)
-// shows just the email section instead — no research, fit meter or delete.
+// shows just the email section instead — no research, fit meter or delete —
+// and opts.sentOnly (from Sent) just the emails already sent.
 async function openDrawer(id, opts = {}){
   flushEmailSave?.(); flushEmailSave = null;
   const r = await fetch("/api/prospects/" + id).then(x=>x.json());
   openDrawer._id = id;
-  const emailOnly = !!opts.emailOnly;
+  const sentOnly = !!opts.sentOnly, emailOnly = sentOnly || !!opts.emailOnly;
   $("#drawer").classList.toggle("email-only", emailOnly);
   const isErr = r.error != null;
   $("#d-company").textContent = r.company;
@@ -1370,9 +1372,12 @@ async function openDrawer(id, opts = {}){
   const body = $("#d-body"); body.innerHTML = "";
   if (isErr){
     body.appendChild(sec("Research failed", `<div class="errbox">${esc(r.error)}</div>`));
+  } else if (sentOnly){
+    const h = el("div", "sec");
+    h.appendChild(sendHistory(r.sends || []));
+    body.appendChild(h);
   } else if (emailOnly){
-    body.appendChild(emailSection(id, r.email, r.sends || [], !!r.queued_at, r.next_language,
-                                  !!r.approved_at));
+    body.appendChild(emailSection(id, r.email, !!r.queued_at, r.next_language, !!r.approved_at));
   } else {
     if (r.outreach_angle) body.appendChild(sec("Outreach angle", `<div class="angle">${esc(r.outreach_angle)}</div>`));
     if (r.pain_points?.length){
@@ -1396,9 +1401,8 @@ async function openDrawer(id, opts = {}){
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
 
-function emailSection(id, existing, sends, queued, language, approved){
+function emailSection(id, existing, queued, language, approved){
   const s = el("div", "sec email");
-  sends = sends || [];
   // "Remove" takes an unsent company off Active contacts (unmarks it "to
   // contact"; its draft is kept). Emailed companies stay listed, so no button.
   const remove = el("button", "icon-btn", "✕ Remove");
@@ -1419,7 +1423,7 @@ function emailSection(id, existing, sends, queued, language, approved){
   // The toolbar's first slot holds the draft's own buttons (New contact info /
   // subject / body); renderEmail fills it and refills it on every redraw.
   const tools = el("span", "email-tools");
-  if (existing) renderEmail(id, out, existing, sends, tools);
+  if (existing) renderEmail(id, out, existing, tools);
   else out.appendChild(el("div", "email-none",
     "No draft yet — tick this company in To do and use “Draft selected”."));
   // EN/ES: the language the next draft (from To do) is written in. Saved on
@@ -1480,9 +1484,8 @@ function emailSection(id, existing, sends, queued, language, approved){
 // so closing or switching the drawer mid-debounce never drops them.
 let flushEmailSave = null;
 
-function renderEmail(id, out, email, sends, tools){
+function renderEmail(id, out, email, tools){
   out.innerHTML = "";
-  sends = sends || [];
   const wrap = el("div", "email-draft");
 
   // Status line: draft origin + language, and — once sent — the send/reply state.
@@ -1570,7 +1573,7 @@ function renderEmail(id, out, email, sends, tools){
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
       const data = await res.json();
       renderEmail(id, out, {...email, contact, subject: data.subject, body: data.body,
-                            review: data.review}, sends, tools);
+                            review: data.review}, tools);
       refreshAfterDrawerChange();
     } catch (e){
       toast("Couldn't draft a new body: " + e.message);
@@ -1586,47 +1589,45 @@ function renderEmail(id, out, email, sends, tools){
     contactSlot.replaceChildren(contactButton(id, contact, onFound));
   }
 
-  // Full outreach history: every send kept, so resends don't erase the trail.
-  const histHost = el("div", "hist-host");
-  function drawHistory(){
-    histHost.innerHTML = "";
-    if (!sends.length) return;
-    const h = el("div", "send-hist");
-    h.appendChild(el("div", "hh", sends.length === 1 ? "Sent once"
-      : "Sent " + sends.length + " times"));
-    for (const sd of sends){
-      const item = el("div", "sh");
-      const head = el("div", "sh-head");
-      head.appendChild(el("span", "caret", "▸"));
-      head.appendChild(el("span", "date", (sd.sent_at || "").slice(0, 10)));
-      if (sd.contact_email) head.appendChild(el("span", "to", esc(sd.contact_email)));
-      head.appendChild(el("span", sd.replied_at ? "rep" : "wait",
-        sd.replied_at ? "↩ replied " + sd.replied_at.slice(0, 10) : "awaiting reply"));
-      const bodyEl = el("div", "sh-body"); bodyEl.hidden = true;
-      bodyEl.appendChild(el("div", "subj", esc(sd.subject || "(no subject)")));
-      bodyEl.appendChild(el("div", "snap", esc(sd.body || "")));
-      head.onclick = () => {
-        bodyEl.hidden = !bodyEl.hidden;
-        head.querySelector(".caret").textContent = bodyEl.hidden ? "▸" : "▾";
-      };
-      item.append(head, bodyEl);
-      h.appendChild(item);
-    }
-    histHost.appendChild(h);
-  }
-
   // Toolbar: New contact info · New subject · New body (see emailSection).
   const contactSlot = el("span", "email-tools");
   tools.replaceChildren(contactSlot, redo, newBody);
 
   drawStatus();
   drawContact();
-  drawHistory();
 
-  wrap.append(ta, saveNote, histHost);
+  wrap.append(ta, saveNote);
   if (email.review) wrap.appendChild(reviewPanel(email.review, email));   // at the bottom
   out.appendChild(wrap);
   requestAnimationFrame(fitBody);                // once it's in the drawer and has a width
+}
+
+// Every email sent to a company, newest first (kept forever, so resends don't
+// erase the trail). Each one expands to its subject + body; the newest starts open.
+function sendHistory(sends){
+  const h = el("div", "send-hist");
+  if (!sends.length){ h.appendChild(el("div", "hh", "Nothing sent yet")); return h; }
+  h.appendChild(el("div", "hh", sends.length === 1 ? "Sent once"
+    : "Sent " + sends.length + " times"));
+  sends.forEach((sd, i) => {
+    const item = el("div", "sh");
+    const head = el("div", "sh-head");
+    head.appendChild(el("span", "caret", i ? "▸" : "▾"));
+    head.appendChild(el("span", "date", (sd.sent_at || "").slice(0, 10)));
+    if (sd.contact_email) head.appendChild(el("span", "to", esc(sd.contact_email)));
+    head.appendChild(el("span", sd.replied_at ? "rep" : "wait",
+      sd.replied_at ? "↩ replied " + sd.replied_at.slice(0, 10) : "awaiting reply"));
+    const bodyEl = el("div", "sh-body"); bodyEl.hidden = i > 0;
+    bodyEl.appendChild(el("div", "subj", esc(sd.subject || "(no subject)")));
+    bodyEl.appendChild(el("div", "snap", esc(sd.body || "")));
+    head.onclick = () => {
+      bodyEl.hidden = !bodyEl.hidden;
+      head.querySelector(".caret").textContent = bodyEl.hidden ? "▸" : "▾";
+    };
+    item.append(head, bodyEl);
+    h.appendChild(item);
+  });
+  return h;
 }
 
 // What the checks + Claude review did to the draft: fixes, rules still broken,
