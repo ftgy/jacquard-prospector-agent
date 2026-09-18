@@ -14,7 +14,7 @@ lint_email() returns a list of {'rule', 'detail'} dicts — empty means clean.
 
 import re
 
-from .agent import INVITE_CORRECTION, SELF_INTRO, SENDER_NAME, SIGNATURE_LINKS
+from .agent import SELF_INTRO, SENDER_NAME, SIGNATURE_LINKS
 
 # The fixed opener of the ask (playbook beat 5). Spanish only — the playbook
 # defines no English equivalent.
@@ -74,7 +74,6 @@ def lint_email(subject: str, body: str, language: str = "spanish") -> list[dict]
 
     flat = _squash(body)
     for rule, fixed in (("self-intro", SELF_INTRO.get(language)),
-                        ("invite-correction", INVITE_CORRECTION.get(language)),
                         ("ask-opener", ASK_OPENER.get(language))):
         if fixed and _squash(fixed) not in flat:
             flag(rule, f"Missing the fixed line, verbatim: “{fixed}”")

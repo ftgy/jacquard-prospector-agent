@@ -1,6 +1,6 @@
 """Deterministic playbook checks on drafted emails (no network)."""
 
-from prospector.agent import INVITE_CORRECTION, SELF_INTRO, SENDER_NAME, SIGNATURE_LINKS
+from prospector.agent import SELF_INTRO, SENDER_NAME, SIGNATURE_LINKS
 from prospector.email_lint import lint_email
 
 SUBJECT = "¿Cuánto tarda un CV en estar listo para enviar?"
@@ -13,7 +13,7 @@ def body(observation="Vi que en vuestra web decís que vuestros reclutadores son
          ask="¿Os cuadra agendar una llamada de 20 minutos para comentarlo? Si ya lo "
              "tenéis cubierto, quedo a vuestra disposición para otra ocasión.",
          intro=SELF_INTRO["spanish"], signature=f"{SENDER_NAME}\n{SIGNATURE_LINKS}"):
-    return (f"Buenas,\n\n{intro}\n\n{observation}\n{INVITE_CORRECTION['spanish']}\n\n"
+    return (f"Buenas,\n\n{intro}\n\n{observation}\n\n"
             "Lo que hago en estos casos es montar un agente que se encargue justo de "
             f"esa tarea.\n\n{ask}\n\nUn saludo,\n{signature}")
 

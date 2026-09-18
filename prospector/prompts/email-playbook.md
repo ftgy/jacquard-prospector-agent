@@ -22,12 +22,7 @@ or labels):
    named with their own systems and cases ("¿cuánto tiempo pierde hoy el equipo entre
    que un lead escribe en alemán desde Canarias y que Resales Online sabe a qué agente
    va?"), not a vague "¿os pasa esto?". A pointed question lets *them* fill in the
-   number instead of you claiming it. Then, in the same breath, **invite correction**
-   with this fixed line, reproduced VERBATIM — do not reword it: **"Corregidme si me
-   equivoco; es lo que suelo ver en empresas de vuestro tamaño, pero cada equipo
-   trabaja de manera diferente."** Keep "empresas" as-is; don't swap it for the
-   reader's sector. That line is what keeps the email humble instead of a stranger
-   telling them how their own business works.
+   number instead of you claiming it.
 4. **The offer** — small and concrete: what I do in these cases is build a small
    agent that takes exactly that task off their plate; usually one concrete
    workflow, resolved in a couple of weeks ("suele ser un flujo concreto que se
@@ -47,7 +42,7 @@ or labels):
    valediction ("Un saludo,") above the signature.
 
 **Example** (Spanish, `vosotros` — note the result-oriented subject, the short
-sentences, the felt question, the self-intro, and the invitation to correct):
+sentences, the felt question, and the self-intro):
 
 > Subject: ¿Cuánto tarda un CV en estar listo para enviar?
 >
@@ -61,8 +56,6 @@ sentences, the felt question, the self-intro, and the invitation to correct):
 > comerciales. Aun así, imagino que buena parte de su semana se va en buscar perfiles
 > en LinkedIn y reformatear CVs a la plantilla de cada cliente. ¿Cuánto tiempo pierde hoy el
 > equipo entre que encuentra a un buen candidato y su CV está listo para el cliente?
-> Corregidme si me equivoco; es lo que suelo ver en empresas de vuestro tamaño, pero
-> cada equipo trabaja de manera diferente.
 >
 > Lo que hago en estos casos es montar un agente que se encargue justo de
 > esa tarea. Suele ser un flujo concreto que se resuelve en un par de semanas.
@@ -82,7 +75,7 @@ sentences, the felt question, the self-intro, and the invitation to correct):
   que alguien todavía tiene que…"; "y si el OCR se atasca…, supongo que ahí es donde
   se va el tiempo"). Let the observation and the guess breathe over a couple of
   clauses instead of collapsing into one dense sentence. Never drop the self-intro
-  or the invitation-to-correct to save words.
+  to save words.
 - **Keep sentences short — split, don't stack.** In a cold email every word competes
   with the reader's patience, and a 40-plus-word sentence loses them. Never pack the
   observation *and* the region list *and* the systems *and* the guess into one
@@ -90,8 +83,8 @@ sentences, the felt question, the self-intro, and the invitation to correct):
   or three. State the observation in one sentence, the guess in the next, the felt
   question in its own. Short sentences read as confident; long ones read as anxious.
 - **Guess, don't diagnose.** Anything you didn't directly observe is a hypothesis,
-  so frame it as one ("imagino que…", "supongo que…", "me da la impresión de que…")
-  and invite the reader to correct you. Never state an inference as fact, never tell
+  so frame it as one ("imagino que…", "supongo que…", "me da la impresión de que…").
+  Never state an inference as fact, never tell
   the reader how their business works as if you know it better than they do. An
   outsider who hedges reads as respectful; one who asserts reads as arrogant.
 - **Introduce yourself first.** One plain line on who's writing, before you talk

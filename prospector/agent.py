@@ -645,22 +645,6 @@ SELF_INTRO = {
     ),
 }
 
-# The invitation-to-correct that closes the observation beat (beat 3). Like the
-# self-intro it carries no per-prospect content — it's the standing humility line
-# that keeps the email from telling a stranger how their own business works — so it
-# is fixed here and reproduced verbatim right after the felt question, rather than
-# reworded on every draft. Keyed by output language.
-INVITE_CORRECTION = {
-    "spanish": (
-        "Corregidme si me equivoco; es lo que suelo ver en empresas de vuestro "
-        "tamaño, pero cada equipo trabaja de manera diferente."
-    ),
-    "english": (
-        "Correct me if I'm wrong; it's what I usually see at companies your size, "
-        "but every team works differently."
-    ),
-}
-
 # The studio background and the email's shape + rules are NOT inlined here — they
 # live as editable Markdown under prospector/prompts/, read at draft time so the
 # outreach voice can be tuned without touching this module (see prospector/docs.py):
@@ -681,7 +665,6 @@ def email_playbook() -> str:
 def _email_system(icp: str, language: str) -> str:
     lang = _LANGUAGES.get(language, "English")
     intro = SELF_INTRO.get(language, SELF_INTRO["english"])
-    invite = INVITE_CORRECTION.get(language, INVITE_CORRECTION["english"])
     es_note = (' (in Spanish, address the reader as a team with the Spain '
                'second-person plural "vosotros"/"vuestro" and the -áis/-éis verb '
                'endings — the natural, peer-to-peer register; never the formal '
@@ -706,7 +689,7 @@ Voice: plain, specific, unhyped, and HUMBLE. Concrete over abstract — name the
 and the hours it eats, not "cutting-edge AI". Say the honest thing, even when it \
 costs the sale. You are an outsider guessing at how they work from the outside, so \
 anything you did not directly observe is a hypothesis: hedge it ("I imagine…", \
-"I'd guess…") and invite the reader to correct you, rather than asserting how their \
+"I'd guess…"), rather than asserting how their \
 business runs as if you knew it better than they do. Open with a short greeting; if \
 you don't know the reader's name, keep it neutral rather than inventing one. Then, as \
 the opening line of the body, reproduce this self-introduction VERBATIM — do not \
@@ -716,13 +699,6 @@ paraphrase, translate, reorder, or add to it:
 
 After it, go straight into the personalized beats. The email is about THEM — the \
 studio gets one line at most.
-
-One more fixed line, reproduced VERBATIM: right after your felt question (beat 3), \
-invite the reader to correct you with this exact sentence — do not paraphrase, \
-translate, reorder, or reword it, and do not change "empresas" to the reader's \
-sector:
-
-{invite}
 
 {email_playbook()}
 
@@ -885,7 +861,7 @@ breaks nothing comes back byte-for-byte unchanged, with an empty issues list.
 - Check it against the research: any fact not supported by the prospect notes is \
 invented — remove it or soften it into a hedged guess.
 - Never add new facts, names, or claims of your own.
-- Fixed lines (self-introduction, invitation to correct, ask opener, signature) \
+- Fixed lines (self-introduction, ask opener, signature) \
 must match the brief exactly; restore them verbatim if they drifted.
 - Automatic checks may have flagged problems already; fix each one (they are \
 reliable), then look for what they can't catch: people named, inferences stated \
