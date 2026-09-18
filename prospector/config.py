@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Override per-environment via .env. LiteLLM instances name models however their
 # config declares them, so the model is configurable rather than hard-coded.
-DEFAULT_MODEL = "claude-opus-4-8"
+DEFAULT_MODEL = "vertex_ai/claude-opus-4-8"
 
 # Language the agent writes its research output in (discovery notes, research
 # summaries, and qualification verdicts). Flip this one variable to make the whole
