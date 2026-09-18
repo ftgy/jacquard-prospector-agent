@@ -306,7 +306,7 @@
     background: color-mix(in srgb, var(--accent) 16%, transparent); }
 
   /* "To contact" toggle + Claude review of the draft */
-  .review { margin-bottom: 10px; border: 1px solid var(--hairline); border-radius: 9px;
+  .review { margin-top: 14px; border: 1px solid var(--hairline); border-radius: 9px;
     background: var(--surface-2); font-size: 12.5px; }
   .review.ok { border-color: color-mix(in srgb, var(--tier-a) 35%, var(--hairline)); }
   .review.warn { border-color: color-mix(in srgb, var(--tier-c) 50%, var(--hairline));
@@ -1436,7 +1436,6 @@ function renderEmail(id, out, email, sends, tools){
   let contact = email.contact;                    // updated in place by the search
   const cardHost = el("div", "contact-host");
   wrap.appendChild(cardHost);
-  if (email.review) wrap.appendChild(reviewPanel(email.review, email));
 
   const subjWrap = el("div", "email-subj", `<span class="k">Subject</span>`);
   const subjInput = el("input", "subjtext");
@@ -1558,6 +1557,7 @@ function renderEmail(id, out, email, sends, tools){
   drawHistory();
 
   wrap.append(ta, saveNote, histHost);
+  if (email.review) wrap.appendChild(reviewPanel(email.review, email));   // at the bottom
   out.appendChild(wrap);
   requestAnimationFrame(fitBody);                // once it's in the drawer and has a width
 }
