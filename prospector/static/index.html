@@ -365,6 +365,11 @@
   .otable .rep { color: var(--tier-a); font-weight: 600; font-size: 12px; white-space: nowrap; }
   .otable .wait { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .otable td.empty { color: var(--muted); font-size: 12px; cursor: default; }
+  .otable th.sortable { cursor: pointer; user-select: none; }
+  .otable th.sortable:hover, .otable th.sorted { color: var(--ink); }
+  .otable th.sortable::after { content: "↕"; margin-left: 4px; opacity: .35; }
+  .otable th.sorted.asc::after { content: "↑"; opacity: 1; }
+  .otable th.sorted.desc::after { content: "↓"; opacity: 1; }
   .otable .pick { width: 1%; padding-right: 0; }
   .otable .pick input { cursor: pointer; accent-color: var(--accent); width: 15px; height: 15px; vertical-align: middle; }
   .oqueue .qstat.sent { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
@@ -602,7 +607,7 @@
         <button class="icon-btn primary" id="draftNowBtn" title="Write and review emails for the ticked companies, or the whole queue if none are ticked (nothing is sent)">✎ Draft all</button>
       </div>
       <div class="scroll"><table class="otable oqueue">
-        <thead><tr><th class="pick"><input type="checkbox" id="o-pick-all" title="Select all unsent"></th><th>Company</th><th>Contact</th><th>Draft</th><th>Last sent</th><th>Reply</th></tr></thead>
+        <thead><tr><th class="pick"><input type="checkbox" id="o-pick-all" title="Select all unsent"></th><th class="sortable" data-sort="company">Company</th><th class="sortable" data-sort="contact">Contact</th><th class="sortable" data-sort="draft">Draft</th><th class="sortable" data-sort="sent">Last sent</th><th class="sortable" data-sort="reply">Reply</th></tr></thead>
         <tbody id="o-active"></tbody>
       </table></div>
     </div>
@@ -773,9 +778,47 @@ $("#o-pick-all").onclick = e => {
   drawPicks();
 };
 
+// Column sort for Active contacts. No sort = the server's order. Clicking a
+// header sorts by it (Last sent starts newest-first); clicking it again flips it. Blank values
+// (no contact, never sent, no reply yet) always go last.
+const QUEUE_ORDER = ["ready", "needs-review", "no-contact", "waiting", "sent"];
+const ACTIVE_SORT_KEYS = {
+  company: r => (r.company || "").toLowerCase() || null,
+  contact: r => (r.contact_email || "").toLowerCase() || null,
+  draft:   r => { const i = QUEUE_ORDER.indexOf(r.status); return i < 0 ? QUEUE_ORDER.length : i; },
+  sent:    r => r.sent_at || null,
+  reply:   r => r.replied_at ? 0 : r.sent_at ? 1 : null,
+};
+let activeRows = [], activeSort = { key: null, dir: 1 };
+document.querySelectorAll(".oqueue th.sortable").forEach(th => th.onclick = () => {
+  const key = th.dataset.sort;
+  activeSort = { key, dir: activeSort.key === key ? -activeSort.dir : key === "sent" ? -1 : 1 };
+  drawActive();
+});
+function sortedActive(){
+  const { key, dir } = activeSort, get = ACTIVE_SORT_KEYS[key];
+  if (!get) return activeRows;
+  return [...activeRows].sort((a, b) => {
+    const x = get(a), y = get(b);
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+    return (x < y ? -1 : x > y ? 1 : 0) * dir;
+  });
+}
+
 async function loadActive(){
-  const host = $("#o-active");
   let q; try { q = await fetch("/api/outreach/active").then(r=>r.json()); } catch { return; }
+  activeRows = q;
+  drawActive();
+}
+
+function drawActive(){
+  const host = $("#o-active"), q = activeRows;
+  document.querySelectorAll(".oqueue th.sortable").forEach(th => {
+    const on = th.dataset.sort === activeSort.key;
+    th.classList.toggle("sorted", on);
+    th.classList.toggle("asc", on && activeSort.dir === 1);
+    th.classList.toggle("desc", on && activeSort.dir === -1);
+  });
   host.innerHTML = "";
   $("#cnt-queue").textContent = q.filter(r => r.status !== "sent").length || "";
   pickable = q.filter(r => r.status !== "sent").map(r => r.id);
@@ -785,7 +828,7 @@ async function loadActive(){
     host.appendChild(el("tr", null, "<td class='empty' colspan='6'>Nothing here yet — mark companies “to contact” with the ☆ in the research tables.</td>"));
     return;
   }
-  for (const r of q){
+  for (const r of sortedActive()){
     const tr = el("tr");
     const sent = r.sent_at ? `<span class="when" title="Sent ${esc(r.sent_at.slice(0,10))}">${esc(relTime(r.sent_at))}</span>`
                            : `<span class="wait">—</span>`;
