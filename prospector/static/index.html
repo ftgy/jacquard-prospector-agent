@@ -407,7 +407,7 @@
   .send-hist .sh-body .snap { white-space: pre-wrap; font-size: 12px; color: var(--ink-2);
     background: var(--surface-2); border-radius: 6px; padding: 8px 10px; }
 
-  /* outreach tab */
+  /* subtabs (research + outreach) and the outreach tab */
   .subtabs { display: flex; gap: 8px; margin-bottom: 16px; }
   .subtabs .tnum { font-family: var(--mono); font-size: 11px; border-radius: 999px; padding: 0 6px;
                    background: var(--surface-2); color: var(--ink-2); }
@@ -492,26 +492,11 @@
 <div class="wrap">
   <nav class="tabs" id="tabs">
     <button data-tab="niches">Niches</button>
-    <button data-tab="niche">Research a niche <span class="tnum" id="cnt-niche">0</span></button>
-    <button data-tab="companies">Research companies <span class="tnum" id="cnt-companies">0</span></button>
+    <button data-tab="research">Research</button>
     <button data-tab="outreach">Outreach <span class="tnum" id="cnt-outreach">0</span></button>
   </nav>
 
-  <!-- stat rail (research tabs only) -->
-  <section class="stats" id="stats" aria-label="Pipeline summary">
-    <div class="stat"><div class="k">Prospects</div><div class="v" id="s-total">—</div></div>
-    <div class="stat tierA"><div class="k">Tier A</div><div class="v" id="s-a">—</div></div>
-    <div class="stat tierB"><div class="k">Tier B</div><div class="v" id="s-b">—</div></div>
-    <div class="stat tierC"><div class="k">Tier C</div><div class="v" id="s-c">—</div></div>
-    <div class="stat tierD"><div class="k">Disqualified</div><div class="v" id="s-d">—</div></div>
-    <div class="stat dist">
-      <div class="k">Avg fit · mix</div>
-      <div class="v" id="s-avg" style="font-size:20px">—<small>/100</small></div>
-      <div class="distbar" id="distbar" title="Tier distribution"></div>
-    </div>
-  </section>
-
-  <!-- filters (research tabs only; relocated into the active pane on tab switch) -->
+  <!-- filters (research result views only; relocated into the active view on switch) -->
   <div class="filters" id="filters">
     <span class="chip on" data-tier="">All</span>
     <span class="chip" data-tier="A"><span class="swatch" style="background:var(--tier-a)"></span>A</span>
@@ -535,11 +520,18 @@
       <div class="run-hint">A fast idea pass grounded in the city's economy and your ICP — no web search, no cost to the pipeline.</div>
       <div class="niche-results" id="nicheResults"></div>
     </div>
-    <p class="pane-hint">Pick a niche to load it into “Research a niche”, then run discovery.</p>
+    <p class="pane-hint">Pick a niche to load it into Research → “Research a niche”, then run discovery.</p>
   </section>
 
-  <!-- Tab 2: Research a niche -->
-  <section class="tabpane" id="pane-niche">
+  <!-- Tab 2: Research — subtabs: a niche, specific companies, statistics -->
+  <section class="tabpane" id="pane-research">
+    <div class="subtabs" id="r-subtabs">
+      <button class="chip" data-view="niche">Research a niche <span class="tnum" id="cnt-niche"></span></button>
+      <button class="chip" data-view="companies">Research companies <span class="tnum" id="cnt-companies"></span></button>
+      <button class="chip" data-view="rstats">Statistics</button>
+    </div>
+
+    <div class="subpane" id="view-niche">
     <div class="panel">
       <h2>Research a niche</h2>
       <div class="run-row">
@@ -550,10 +542,9 @@
       <div class="run-hint">Finds real companies in the niche, then researches &amp; qualifies each against your ICP.</div>
     </div>
     <div class="groups" id="niche-groups"></div>
-  </section>
+    </div>
 
-  <!-- Tab 3: Research companies -->
-  <section class="tabpane" id="pane-companies">
+    <div class="subpane" id="view-companies">
     <div class="panel">
       <h2>Research specific companies</h2>
       <div class="run-row">
@@ -566,9 +557,25 @@
       <div class="run-hint">Researches &amp; qualifies exactly the companies you name. Re-running a company you already have replaces its old record. Thorough = deeper, slower, pricier.</div>
     </div>
     <div class="groups" id="companies-groups"></div>
+    </div>
+
+    <div class="subpane" id="view-rstats">
+    <section class="stats" id="stats" aria-label="Pipeline summary">
+      <div class="stat"><div class="k">Prospects</div><div class="v" id="s-total">—</div></div>
+      <div class="stat tierA"><div class="k">Tier A</div><div class="v" id="s-a">—</div></div>
+      <div class="stat tierB"><div class="k">Tier B</div><div class="v" id="s-b">—</div></div>
+      <div class="stat tierC"><div class="k">Tier C</div><div class="v" id="s-c">—</div></div>
+      <div class="stat tierD"><div class="k">Disqualified</div><div class="v" id="s-d">—</div></div>
+      <div class="stat dist">
+        <div class="k">Avg fit · mix</div>
+        <div class="v" id="s-avg" style="font-size:20px">—<small>/100</small></div>
+        <div class="distbar" id="distbar" title="Tier distribution"></div>
+      </div>
+    </section>
+    </div>
   </section>
 
-  <!-- Tab 4: Outreach -->
+  <!-- Tab 3: Outreach -->
   <section class="tabpane" id="pane-outreach">
     <div class="subtabs" id="o-subtabs">
       <button class="chip" data-sub="pipeline">Pipeline <span class="tnum" id="cnt-queue"></span></button>
@@ -659,7 +666,11 @@ const fitColor = t => t==='A'?'var(--tier-a)':t==='B'?'var(--tier-b)':t==='C'?'v
 const plural = (n, one, many) => `${n} ${n===1?one:many}`;
 
 const KIND = { niche: "discover", companies: "companies" };
-const state = { tab: "niche", tier: "", minScore: 0, q: "" };
+// state.tab is the active view: "niches", "outreach", or one of the Research
+// subtabs in RESEARCH_VIEWS ("niche"/"companies" hold results, "rstats" the tiles).
+const state = { tab: "niche", rview: "niche", tier: "", minScore: 0, q: "" };
+const RESEARCH_VIEWS = ["niche", "companies", "rstats"];
+const isResultsView = v => v === "niche" || v === "companies";
 const cache = { niche: null, companies: null };   // last grouped payload per tab
 
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show");
@@ -673,22 +684,33 @@ $("#themeBtn").onclick = () => {
 };
 
 // --- tabs ---
-document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+// Top tabs: Niches, Research (remembers its last subtab), Outreach.
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () =>
+  switchTab(b.dataset.tab === "research" ? state.rview : b.dataset.tab));
+document.querySelectorAll("#r-subtabs button").forEach(b => b.onclick = () => switchTab(b.dataset.view));
 function switchTab(tab){
   state.tab = tab;
-  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
-  document.querySelectorAll(".tabpane").forEach(p => p.classList.remove("on"));
-  $("#pane-" + tab).classList.add("on");
-  const research = tab === "niche" || tab === "companies";
-  $("#stats").style.display = research ? "" : "none";
-  $("#filters").style.display = research ? "" : "none";
-  location.hash = tab === "outreach" && state.osub !== "pipeline" ? "outreach/" + state.osub : tab;
+  const research = RESEARCH_VIEWS.includes(tab), pane = research ? "research" : tab;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === pane));
+  document.querySelectorAll(".tabpane").forEach(p => p.classList.toggle("on", p.id === "pane-" + pane));
   if (research){
-    // Relocate the shared filter bar into the active pane, just above its
-    // results (below the run panel) — one element serves both research tabs.
+    state.rview = tab;
+    document.querySelectorAll("#r-subtabs button").forEach(b => b.classList.toggle("on", b.dataset.view === tab));
+    document.querySelectorAll("#pane-research .subpane").forEach(p => p.classList.toggle("on", p.id === "view-" + tab));
+  }
+  $("#filters").style.display = isResultsView(tab) ? "" : "none";
+  location.hash = tab === "outreach" ? (state.osub !== "pipeline" ? "outreach/" + state.osub : "outreach")
+                : tab === "niche" ? "research"
+                : tab === "companies" ? "research/companies"
+                : tab === "rstats" ? "research/stats" : tab;
+  if (isResultsView(tab)){
+    // Relocate the shared filter bar into the active view, just above its
+    // results (below the run panel) — one element serves both result views.
     const groups = $("#" + tab + "-groups");
     groups.parentNode.insertBefore($("#filters"), groups);
     loadStats(); loadGroups(tab);
+  } else if (tab === "rstats"){
+    loadStats();
   } else if (tab === "outreach"){
     loadOutreach();
   }
@@ -1515,7 +1537,7 @@ function wordDiff(a, b){
 // Keep the list behind the drawer in sync after a queue/draft change.
 function refreshAfterDrawerChange(){
   if (state.tab === "outreach"){ loadActive(); loadBlocked(); }
-  else if (state.tab !== "niches") loadGroups(state.tab);
+  else if (isResultsView(state.tab)) loadGroups(state.tab);
 }
 
 // A contact "Send to" card. `onFound` is called with the new contact (or null)
@@ -1596,7 +1618,7 @@ $("#d-delete").onclick = async () => {
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
     closeDrawer();
     toast("Entry deleted.");
-    if (state.tab !== "niches"){ loadStats(); loadGroups(state.tab); }
+    loadStats(); if (isResultsView(state.tab)) loadGroups(state.tab);
   } catch (e){ toast("Couldn't delete: " + e.message); }
   finally { btn.disabled = false; }
 };
@@ -1610,7 +1632,10 @@ $("#minScore").oninput = e => { state.minScore = +e.target.value; $("#minScoreV"
 $("#minScore").onchange = () => renderGroups(state.tab);
 let searchT; $("#search").oninput = e => { clearTimeout(searchT); state.q = e.target.value.trim();
   searchT = setTimeout(() => renderGroups(state.tab), 200); };
-$("#refreshBtn").onclick = () => { if (state.tab !== "niches"){ loadStats(); loadGroups(state.tab); } };
+$("#refreshBtn").onclick = () => {
+  if (RESEARCH_VIEWS.includes(state.tab)) loadStats();
+  if (isResultsView(state.tab)) loadGroups(state.tab);
+};
 
 // --- niche suggestion (tab 1) ---
 $("#nicheBtn").onclick = async () => {
@@ -1706,6 +1731,7 @@ function pollRun(tab, runId, btn){
 
 // --- boot ---
 const [hTab, hSub] = location.hash.slice(1).split("/");
-switchSub(["stats", "blocked"].includes(hSub) ? hSub : "pipeline");
-switchTab(["niches","niche","companies","outreach"].includes(hTab) ? hTab : "niche");
+switchSub(hTab === "outreach" && ["stats", "blocked"].includes(hSub) ? hSub : "pipeline");
+switchTab(hTab === "research" ? ({ companies: "companies", stats: "rstats" }[hSub] || "niche")
+        : ["niches", "niche", "companies", "outreach"].includes(hTab) ? hTab : "niche");
 </script>

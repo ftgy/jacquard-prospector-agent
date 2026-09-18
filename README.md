@@ -92,24 +92,27 @@ the database once:
 python scripts/import_results.py
 ```
 
-The dashboard has four tabs:
+The dashboard has three tabs:
 
 - **Niches** — type a city, get clickable niche suggestions; picking one loads it
-  into the next tab.
-- **Research a niche** — run discovery on a niche. Results are grouped by **niche
-  category**, not by individual search: each run is auto-filed under a
-  location-agnostic category (so "real estate agencies in Barcelona" and
-  "...in Marbella" fold into one *Real estate agencies* list), letting you focus a
-  whole niche at once. The searches that fed a category are shown as chips you can
-  delete individually; the category name is click-to-rename (renaming onto an
-  existing name merges the two). Runs from before this feature can be backfilled
-  with `python scripts/categorize_runs.py`.
-- **Research companies** — qualify specific named companies, likewise grouped by
-  the query. Unlike discovery, this tab does **not** skip companies you already
-  have — naming one re-researches it, and the fresh record is kept alongside the
-  old one (nothing is deleted; the new run just shows as its own group). Tick
-  **Thorough** for a deeper pass (more web searches and a longer summary) on
-  companies you care about; it's slower and costs more, so it's off by default.
+  into Research → *Research a niche*.
+- **Research** — three subtabs:
+  - **Research a niche** — run discovery on a niche. Results are grouped by **niche
+    category**, not by individual search: each run is auto-filed under a
+    location-agnostic category (so "real estate agencies in Barcelona" and
+    "...in Marbella" fold into one *Real estate agencies* list), letting you focus a
+    whole niche at once. The searches that fed a category are shown as chips you can
+    delete individually; the category name is click-to-rename (renaming onto an
+    existing name merges the two). Runs from before this feature can be backfilled
+    with `python scripts/categorize_runs.py`.
+  - **Research companies** — qualify specific named companies, likewise grouped by
+    the query. Unlike discovery, this subtab does **not** skip companies you already
+    have — naming one re-researches it, and the fresh record is kept alongside the
+    old one (nothing is deleted; the new run just shows as its own group). Tick
+    **Thorough** for a deeper pass (more web searches and a longer summary) on
+    companies you care about; it's slower and costs more, so it's off by default.
+  - **Statistics** — the tier breakdown (A/B/C/disqualified) and average fit
+    across all prospects.
 - **Outreach** — send drafted emails through your own Gmail account and watch the
   numbers: sent today, this week, total, replies and reply rate, a 14-day
   sent/replied bar chart, and a recent-sends list. **Check replies** polls your
@@ -117,9 +120,8 @@ The dashboard has four tabs:
   see [docs/gmail-setup.md](docs/gmail-setup.md).
 
 Each prospect row opens a detail drawer (pain points → agent solutions, buying
-signals, sources). A stat rail shows the tier breakdown and average fit, and runs
-stream their results into their group as each company finishes. Both light and
-dark themes.
+signals, sources). Runs stream their results into their group as each company
+finishes. Both light and dark themes.
 
 ## How search works (and why it's swappable)
 
@@ -167,7 +169,7 @@ research, a discovery run drops candidates that match an existing prospect by
 within the same batch. A company whose research previously *failed* stays
 eligible, so a transient error can be retried rather than skipped forever.
 
-The **Research companies** tab is the deliberate exception: it never filters, so
+The **Research companies** subtab is the deliberate exception: it never filters, so
 you can re-research a company on demand. A re-run keeps the earlier record and
 adds the fresh one as a new run group — nothing is deleted, so you can compare or
 clean up the old one yourself.
