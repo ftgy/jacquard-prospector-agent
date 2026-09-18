@@ -1771,4 +1771,8 @@ const [hTab, hSub] = location.hash.slice(1).split("/");
 switchSub(hTab === "outreach" && ["stats", "blocked"].includes(hSub) ? hSub : "pipeline");
 switchTab(hTab === "research" ? ({ companies: "companies", stats: "rstats" }[hSub] || "niche")
         : ["niches", "niche", "companies", "outreach"].includes(hTab) ? hTab : "niche");
+// Fill every subtab counter up front, not just the landing view's: load the
+// result lists and outreach lists the view above didn't already fetch.
+for (const v of ["niche", "companies"]) if (v !== state.tab) loadGroups(v);
+if (state.tab !== "outreach"){ loadActive(); loadBlocked(); }
 </script>
