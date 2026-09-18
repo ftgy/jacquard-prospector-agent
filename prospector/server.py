@@ -88,6 +88,12 @@ class DraftRequest(BaseModel):
     ids: list[int] | None = Field(None, max_length=500)
 
 
+class EmailEditRequest(BaseModel):
+    # The drawer's edited subject/body (autosaved).
+    subject: str = Field(..., max_length=500)
+    body: str = Field(..., max_length=20000)
+
+
 class SendRequest(BaseModel):
     # The edited subject/body to send. Omitted -> send the stored draft as-is.
     subject: str | None = Field(None, max_length=500)
@@ -152,6 +158,19 @@ def api_draft_email(prospect_id: int, req: EmailRequest | None = None):
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, friendly_api_error(e))
+
+
+@app.put("/api/prospects/{prospect_id}/email")
+def api_save_email(prospect_id: int, req: EmailEditRequest):
+    """Save hand edits to the drafted email (the drawer autosaves as you type).
+    Returns {subject, body, remaining} — the rule checks re-run on the edit."""
+    from .service import save_email_edits
+    try:
+        return save_email_edits(prospect_id, req.subject, req.body)
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.post("/api/prospects/{prospect_id}/email/subject")

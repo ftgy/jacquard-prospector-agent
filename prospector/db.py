@@ -603,6 +603,16 @@ def set_prospect_email(prospect_id: int, subject: str, body: str,
         return cur.rowcount > 0
 
 
+def set_email_text(prospect_id: int, subject: str, body: str) -> bool:
+    """Replace the stored draft's subject and body (hand edits); keeps its
+    language and drafted-at time."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET email_subject=?, email_body=? WHERE id=?",
+            (subject, body, prospect_id))
+        return cur.rowcount > 0
+
+
 def set_email_subject(prospect_id: int, subject: str) -> bool:
     """Replace just the stored draft's subject (the body is left as drafted)."""
     with _connect() as conn:

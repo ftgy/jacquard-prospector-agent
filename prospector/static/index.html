@@ -283,7 +283,6 @@
     border-radius: 10px; padding: 12px 14px; }
   textarea.email-body:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
     outline-offset: 1px; border-color: var(--accent); }
-  .email-actions { margin-top: 9px; display: flex; gap: 10px; }
   .email-contact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 9px 12px;
     background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); border: 1px solid var(--hairline);
     border-radius: 9px; margin-bottom: 10px; }
@@ -374,6 +373,7 @@
   .star.on { color: var(--accent); opacity: 1; }
 
   /* Outreach history timeline in the detail drawer. */
+  .email-autosave { font-family: var(--mono); font-size: 11px; color: var(--muted); min-height: 16px; margin-top: 4px; }
   .send-hist { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
   .send-hist > .hh { font-size: 11px; font-weight: 700; color: var(--muted);
     text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
@@ -1307,6 +1307,7 @@ function starButton(r){
 // The full drawer is research only; opts.emailOnly (from the Outreach tab)
 // shows just the email section instead — no research, fit meter or delete.
 async function openDrawer(id, opts = {}){
+  flushEmailSave?.(); flushEmailSave = null;
   const r = await fetch("/api/prospects/" + id).then(x=>x.json());
   openDrawer._id = id;
   const emailOnly = !!opts.emailOnly;
@@ -1398,6 +1399,10 @@ function emailSection(id, existing, sends, queued){
   return s;
 }
 
+// Saves the open drawer's pending email edits right away (set by renderEmail),
+// so closing or switching the drawer mid-debounce never drops them.
+let flushEmailSave = null;
+
 function renderEmail(id, out, email, sends){
   out.innerHTML = "";
   sends = sends || [];
@@ -1439,6 +1444,7 @@ function renderEmail(id, out, email, sends){
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
       const data = await res.json();
       subjInput.value = email.subject = data.subject;
+      queueSave();                               // stores any unsaved body edits too
       refreshAfterDrawerChange();
     } catch (e){ toast("Couldn't draft a subject: " + e.message); }
     finally { redo.disabled = false; redo.textContent = was; }
@@ -1446,44 +1452,34 @@ function renderEmail(id, out, email, sends){
   subjWrap.append(subjInput, redo);
   wrap.appendChild(subjWrap);
   const ta = el("textarea", "email-body"); ta.value = email.body;
-  const actions = el("div", "email-actions");
-  const copy = el("button", "icon-btn", "⧉ Copy");
-  copy.onclick = async () => {
-    const to = contact && contact.email ? `To: ${contact.email}\n` : "";
-    const text = `${to}Subject: ${subjInput.value}\n\n${ta.value}`;
-    try { await navigator.clipboard.writeText(text); toast("Email copied to clipboard."); }
-    catch { toast("Couldn't copy — select the text and copy manually."); }
-  };
-  // In-app send via the connected Gmail account. Edits in the textarea are sent
-  // as-is; the body is persisted at draft time, so we push the current text.
-  const send = el("button", "icon-btn primary", email.sent_at ? "↻ Resend" : "✉ Send");
-  send.onclick = async () => {
-    if (!(contact && contact.email)){ toast("No contact address yet — use “Find contact”."); return; }
-    if (email.sent_at && !confirm("Already sent. Send again as a new email?")) return;
-    send.disabled = true; const was = send.textContent; send.textContent = "Sending…";
+
+  // Autosave hand edits to the subject/body: shortly after typing stops, on
+  // blur, and on drawer close. The server re-runs the rule checks, so the
+  // Pipeline status follows the edit.
+  const saveNote = el("div", "email-autosave");
+  let saveT = null, saved = email.subject + "\0" + email.body;
+  async function saveEdits(){
+    clearTimeout(saveT); saveT = null;
+    const subject = subjInput.value, body = ta.value, key = subject + "\0" + body;
+    if (key === saved) return;
+    saveNote.textContent = "Saving…";
     try {
-      // Send exactly what's in the editor (subject + edited body); the server
-      // persists these too so the sent copy is what we store.
-      const res = await fetch(`/api/prospects/${id}/send`, {method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ subject: subjInput.value, body: ta.value })});
+      const res = await fetch(`/api/prospects/${id}/email`, {method:"PUT",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ subject, body })});
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
-      const data = await res.json();
-      email.subject = subjInput.value; email.sent_at = data.sent_at; email.replied_at = null;
-      sends.unshift({subject: subjInput.value, body: ta.value,
-        contact_email: contact.email, sent_at: data.sent_at, replied_at: null});
-      toast("Sent to " + contact.email);
-      drawStatus(); drawHistory(); send.textContent = "↻ Resend";
+      saved = key; email.subject = subject; email.body = body;
+      if (subjInput.value + "\0" + ta.value === key) saveNote.textContent = "Saved";
       refreshAfterDrawerChange();
-    } catch (e){ toast("Couldn't send: " + e.message); send.textContent = was; }
-    finally { send.disabled = !(contact && contact.email); }
-  };
-  actions.append(copy, send);
+    } catch (e){ saveNote.textContent = "Not saved — " + e.message; }
+  }
+  function queueSave(){ clearTimeout(saveT); saveT = setTimeout(saveEdits, 800); }
+  subjInput.oninput = ta.oninput = () => { saveNote.textContent = ""; queueSave(); };
+  subjInput.onblur = ta.onblur = () => { if (saveT) saveEdits(); };
+  flushEmailSave = () => { if (saveT) saveEdits(); };
 
   function drawContact(){
     cardHost.innerHTML = "";
     cardHost.appendChild(contactCard(id, contact, c => { contact = c; drawContact(); }));
-    send.disabled = !(contact && contact.email);
   }
 
   // Full outreach history: every send kept, so resends don't erase the trail.
@@ -1519,7 +1515,7 @@ function renderEmail(id, out, email, sends){
   drawContact();
   drawHistory();
 
-  wrap.append(ta, actions, histHost);
+  wrap.append(ta, saveNote, histHost);
   out.appendChild(wrap);
 }
 
@@ -1645,7 +1641,7 @@ function notesSection(id, notes){
   s.append(ta, actions);
   return s;
 }
-function closeDrawer(){ $("#scrim").classList.remove("show"); $("#drawer").classList.remove("show"); }
+function closeDrawer(){ flushEmailSave?.(); $("#scrim").classList.remove("show"); $("#drawer").classList.remove("show"); }
 $("#d-close").onclick = closeDrawer; $("#scrim").onclick = closeDrawer;
 addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
 

@@ -236,6 +236,28 @@ def draft_email_for(prospect_id: int, language: str | None = None,
     return email
 
 
+def save_email_edits(prospect_id: int, subject: str, body: str) -> dict:
+    """Store hand edits to a prospect's drafted email (the drawer's autosave).
+
+    Like redraft_subject_for, refreshes the stored review's `remaining` rule
+    findings so the Pipeline status tracks the edited text. Returns
+    {'subject', 'body', 'remaining'}. Raises LookupError if the prospect is
+    gone, ValueError if there's no draft yet.
+    """
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    email = rec.get("email")
+    if not email:
+        raise ValueError("No drafted email yet — draft one first.")
+    db.set_email_text(prospect_id, subject, body)
+    remaining = lint_email(subject, body, email.get("language") or get_output_language())
+    review = email.get("review")
+    if review:
+        db.set_email_review(prospect_id, {**review, "remaining": remaining})
+    return {"subject": subject, "body": body, "remaining": remaining}
+
+
 def redraft_subject_for(prospect_id: int, body: str | None = None,
                         subject: str | None = None,
                         client: anthropic.Anthropic | None = None) -> dict:

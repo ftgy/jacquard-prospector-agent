@@ -745,3 +745,26 @@ def test_start_send_ready_async_runs_job(monkeypatch):
     _wait_until(lambda: not service.send_job_status()["running"])
     final = service.send_job_status()
     assert final["sent"] == 1 and final["error"] is None and sent == ["subj A"]
+
+
+def test_save_email_edits_stores_text_and_refreshes_lint():
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "Automatizar el enrutado", "Hola,\n\nCuerpo.", "spanish")
+    db.set_email_review(pid, {"issues": [], "error": None,
+                              "remaining": [{"rule": "subject", "detail": "x"}]})
+    drafted_at = db.get_prospect(pid)["email"]["generated_at"]
+    out = service.save_email_edits(pid, "¿Sigue alguien asignando leads a mano?", "Editado.")
+    email = db.get_prospect(pid)["email"]
+    assert email["subject"] == "¿Sigue alguien asignando leads a mano?"
+    assert email["body"] == "Editado."
+    assert email["language"] == "spanish" and email["generated_at"] == drafted_at
+    assert email["review"]["remaining"] == out["remaining"]
+    assert not any(f["rule"] == "subject" for f in out["remaining"])
+
+
+def test_save_email_edits_needs_a_draft():
+    pid = db.insert_prospect(make_record("Acme"))
+    with pytest.raises(ValueError):
+        service.save_email_edits(pid, "s", "b")
+    with pytest.raises(LookupError):
+        service.save_email_edits(9999, "s", "b")

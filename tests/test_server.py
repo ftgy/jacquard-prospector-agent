@@ -426,3 +426,17 @@ def test_send_ready_endpoints(client, monkeypatch):
     assert client.post("/api/outreach/send-ready", json={"ids": [4, 7]}).json() == {"running": True}
     assert got["ids"] == [4, 7]
     assert "running" in client.get("/api/outreach/send-status").json()
+
+
+def test_save_email_endpoint(client):
+    from prospector import db
+    from tests.conftest import make_record
+    pid = db.insert_prospect(make_record("Acme"))
+    assert client.put(f"/api/prospects/{pid}/email",
+                      json={"subject": "s", "body": "b"}).status_code == 400   # no draft
+    db.set_prospect_email(pid, "old", "old body", "spanish")
+    res = client.put(f"/api/prospects/{pid}/email", json={"subject": "new", "body": "new body"})
+    assert res.status_code == 200 and res.json()["body"] == "new body"
+    assert db.get_prospect(pid)["email"]["subject"] == "new"
+    assert client.put("/api/prospects/9999/email",
+                      json={"subject": "s", "body": "b"}).status_code == 404
