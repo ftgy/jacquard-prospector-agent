@@ -567,6 +567,7 @@
   <section class="tabpane" id="pane-outreach">
     <div class="subtabs" id="o-subtabs">
       <button class="chip" data-sub="pipeline">Pipeline <span class="tnum" id="cnt-queue"></span></button>
+      <button class="chip" data-sub="blocked">Blocked drafts <span class="tnum" id="cnt-blocked"></span></button>
       <button class="chip" data-sub="stats">Statistics</button>
     </div>
 
@@ -606,13 +607,16 @@
       </table></div>
     </div>
 
+    <p class="pane-hint">Active contacts are companies marked “to contact” plus everyone already emailed. <code>scripts/draft_queued.py</code> drafts and reviews emails for the unsent ones.</p>
+    </div>
+
+    <div class="subpane" id="o-sub-blocked">
     <div class="panel">
       <h2>Blocked drafts</h2>
       <div class="oblocked"><div class="rchips" id="o-blocked-rules"></div>
       <ul class="orecent" id="o-blocked"></ul></div>
     </div>
-
-    <p class="pane-hint">Active contacts are companies marked “to contact” plus everyone already emailed. <code>scripts/draft_queued.py</code> drafts and reviews emails for the unsent ones.</p>
+    <p class="pane-hint">Unsent drafts that failed the review or still break a playbook rule. Tick them in Pipeline and “Draft selected” to redo them.</p>
     </div>
   </section>
 </div>
@@ -701,7 +705,8 @@ async function loadStats(){
 }
 
 // --- outreach ---
-// Two subtabs: "pipeline" (queue, blocked, sends; the default) and "stats" (counters + chart).
+// Subtabs: "pipeline" (active contacts; the default), "blocked" (drafts that
+// failed review) and "stats" (counters + chart).
 document.querySelectorAll("#o-subtabs button").forEach(b => b.onclick = () => switchSub(b.dataset.sub));
 function switchSub(sub){
   state.osub = sub;
@@ -864,6 +869,7 @@ async function loadBlocked(){
 function renderBlocked(){
   const chips = $("#o-blocked-rules"), host = $("#o-blocked");
   chips.innerHTML = ""; host.innerHTML = "";
+  $("#cnt-blocked").textContent = blocked.items.length || "";
   if (!blocked.items.length){ host.appendChild(el("li", null, "<span class='wait'>No blocked drafts — everything reviewed passed.</span>")); return; }
   for (const s of blocked.summary){
     const c = el("button", "rchip" + (s.rule === blockedRule ? " on" : ""), `${esc(s.rule)}<b>${s.count}</b>`);
@@ -1657,6 +1663,6 @@ function pollRun(tab, runId, btn){
 
 // --- boot ---
 const [hTab, hSub] = location.hash.slice(1).split("/");
-switchSub(hSub === "stats" ? "stats" : "pipeline");
+switchSub(["stats", "blocked"].includes(hSub) ? hSub : "pipeline");
 switchTab(["niches","niche","companies","outreach"].includes(hTab) ? hTab : "niche");
 </script>
