@@ -496,8 +496,11 @@ def start_draft_queued_async(limit: int = 10,
             _draft_job.update(running=False, current=None,
                               finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
+    # Snapshot before starting: a fast job (empty queue) can finish before a
+    # post-start read, making the "initial" status look already done.
+    status = draft_job_status()
     threading.Thread(target=work, daemon=True).start()
-    return draft_job_status()
+    return status
 
 
 def draft_job_status() -> dict:
