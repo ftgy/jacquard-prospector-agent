@@ -377,7 +377,8 @@
   .star.on { color: var(--accent); opacity: 1; }
 
   /* Outreach history timeline in the detail drawer. */
-  .email-autosave { font-family: var(--mono); font-size: 11px; color: var(--muted); min-height: 16px; margin-top: 4px; }
+  .email-body-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .email-autosave { font-family: var(--mono); font-size: 11px; color: var(--muted); }
   .send-hist { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
   .send-hist > .hh { font-size: 11px; font-weight: 700; color: var(--muted);
     text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
@@ -1486,6 +1487,31 @@ function renderEmail(id, out, email, sends){
   subjInput.onblur = ta.onblur = () => { if (saveT) saveEdits(); };
   flushEmailSave = () => { if (saveT) saveEdits(); };
 
+  // New body only: written for the subject in the editor, reviewed like a full
+  // draft, and stored with that subject — then the email is redrawn with it.
+  const newBody = el("button", "icon-btn", "↻ New body");
+  newBody.title = "Write a new body for this email (the subject stays as it is)";
+  newBody.onclick = async () => {
+    newBody.disabled = true; const was = newBody.textContent; newBody.textContent = "Drafting…";
+    clearTimeout(saveT); saveT = null;          // the request carries the editor's text
+    try {
+      const res = await fetch(`/api/prospects/${id}/email/body`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ subject: subjInput.value, body: ta.value })});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      const data = await res.json();
+      renderEmail(id, out, {...email, contact, subject: data.subject, body: data.body,
+                            review: data.review}, sends);
+      refreshAfterDrawerChange();
+    } catch (e){
+      toast("Couldn't draft a new body: " + e.message);
+      newBody.disabled = false; newBody.textContent = was;
+      queueSave();                              // keep any edits from before the click
+    }
+  };
+  const bodyRow = el("div", "email-body-row");
+  bodyRow.append(newBody, saveNote);
+
   function drawContact(){
     cardHost.innerHTML = "";
     cardHost.appendChild(contactCard(id, contact, c => { contact = c; drawContact(); }));
@@ -1524,7 +1550,7 @@ function renderEmail(id, out, email, sends){
   drawContact();
   drawHistory();
 
-  wrap.append(ta, saveNote, histHost);
+  wrap.append(ta, bodyRow, histHost);
   out.appendChild(wrap);
   requestAnimationFrame(fitBody);                // once it's in the drawer and has a width
 }

@@ -209,6 +209,28 @@ def api_redraft_subject(prospect_id: int, req: SendRequest | None = None):
         raise HTTPException(502, friendly_api_error(e))
 
 
+@app.post("/api/prospects/{prospect_id}/email/body")
+def api_redraft_body(prospect_id: int, req: SendRequest | None = None):
+    """Write a new body for the drafted email, keeping the subject. Synchronous.
+
+    Optional body {subject, body}: the editor's current text (the new body is
+    written for that subject and differs from that body). The new body is
+    reviewed like a full draft. Returns {subject, body, review}.
+    """
+    from .service import redraft_body_for, friendly_api_error
+    req = req or SendRequest()
+    try:
+        return redraft_body_for(prospect_id, req.subject, req.body)
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except SystemExit as e:  # make_client() with no API key
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, friendly_api_error(e))
+
+
 @app.post("/api/prospects/{prospect_id}/contact")
 def api_find_contact(prospect_id: int):
     """Search the web for where to send outreach. Synchronous.

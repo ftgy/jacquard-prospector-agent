@@ -784,3 +784,41 @@ def test_draft_email_for_language_follows_pipeline_pick(monkeypatch):
     service.draft_email_for(pid, client=FakeClient())            # the pick wins
     assert seen == ["spanish", "english"]
     assert db.get_prospect(pid)["email"]["language"] == "english"
+
+
+def test_redraft_body_keeps_subject_and_stores_reviewed_body(monkeypatch):
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "stored subj", "stored body", "spanish")
+    seen = {}
+
+    def fake_body(client, rec, subject, icp, language, current):
+        seen.update(subject=subject, language=language, current=current)
+        return "usted b"
+
+    def fake_review(client, rec, draft, icp, language, lint):
+        seen["reviewed"] = draft
+        # the reviewer also touches the subject: that change must not stick
+        return {"issues": [{"rule": "vosotros", "detail": "usted -> vosotros"}],
+                "subject": "reviewer subj", "body": "vosotros b"}
+
+    monkeypatch.setattr(service, "draft_email_body", fake_body)
+    monkeypatch.setattr(service, "review_outreach_email", fake_review)
+    out = service.redraft_body_for(pid, subject="editor subj", body="editor body",
+                                   client=FakeClient())
+    # written for the editor's subject, told to differ from the editor's body
+    assert seen["subject"] == "editor subj" and seen["current"] == "editor body"
+    assert seen["language"] == "spanish"
+    assert seen["reviewed"] == {"subject": "editor subj", "body": "usted b"}
+    assert out["subject"] == "editor subj" and out["body"] == "vosotros b"
+    stored = db.get_prospect(pid)["email"]
+    assert (stored["subject"], stored["body"]) == ("editor subj", "vosotros b")
+    assert stored["review"]["original"] == {"subject": "editor subj", "body": "usted b"}
+    assert not any("usted" in i["detail"] for i in stored["review"]["remaining"])
+
+
+def test_redraft_body_needs_a_draft():
+    pid = db.insert_prospect(make_record("Acme"))
+    with pytest.raises(ValueError):
+        service.redraft_body_for(pid, client=FakeClient())
+    with pytest.raises(LookupError):
+        service.redraft_body_for(9999, client=FakeClient())

@@ -811,6 +811,40 @@ def draft_email_subject(client: anthropic.Anthropic, record: dict, body: str,
     return out["subject"].strip()
 
 
+BODY_SCHEMA = {
+    "type": "object",
+    "properties": {"body": EMAIL_SCHEMA["properties"]["body"]},
+    "required": ["body"],
+    "additionalProperties": False,
+}
+
+
+def draft_email_body(client: anthropic.Anthropic, record: dict, subject: str,
+                     icp: str, language: str | None = None,
+                     current: str = "") -> str:
+    """Write a fresh email body under an existing subject, leaving the subject alone.
+
+    The counterpart of draft_email_subject: same brief and provider
+    (EMAIL_PROVIDER); `current` is the body being replaced, passed so the model
+    offers a genuinely different take rather than a light rewording.
+    """
+    system = _email_system(icp, language or get_output_language())
+    ask = ("The subject line below is final. Write ONLY a new email body for it, "
+           "following the brief, leading with the same one task the subject points at.")
+    if current.strip():
+        ask += " Give a clearly different take from the current body (below)."
+    ask += ("\n\n=== PROSPECT ===\n" + _email_context(record)
+            + "\n\n=== SUBJECT ===\n" + subject)
+    if current.strip():
+        ask += "\n\n=== CURRENT BODY (replace it) ===\n" + current
+    if get_email_provider() == "deepseek":
+        out = _structure_deepseek(system, ask, BODY_SCHEMA, max_tokens=2000)
+    else:
+        out = _structure(client, system, ask, BODY_SCHEMA,
+                         max_tokens=2000, model=get_email_model())
+    return out["body"].strip()
+
+
 # --- Stage 3b: review the draft against the playbook -------------------------
 
 REVIEW_SCHEMA = {

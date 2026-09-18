@@ -457,3 +457,18 @@ def test_set_language_endpoint(client, monkeypatch):
                       json={"language": "french"}).status_code == 422
     assert client.put("/api/prospects/9999/language",
                       json={"language": "english"}).status_code == 404
+
+
+def test_redraft_body_endpoint(client, monkeypatch):
+    from prospector import service
+    got = {}
+    monkeypatch.setattr(service, "redraft_body_for",
+                        lambda pid, subject, body: got.update(pid=pid, subject=subject, body=body)
+                        or {"subject": subject, "body": "new", "review": {}})
+    res = client.post("/api/prospects/5/email/body", json={"subject": "s", "body": "old"})
+    assert res.json()["body"] == "new" and got == {"pid": 5, "subject": "s", "body": "old"}
+
+    def missing(pid, subject, body):
+        raise LookupError
+    monkeypatch.setattr(service, "redraft_body_for", missing)
+    assert client.post("/api/prospects/9999/email/body").status_code == 404

@@ -20,6 +20,7 @@ from . import db, gmailer
 from .agent import (
     categorize_niche,
     discover_candidates,
+    draft_email_body,
     draft_email_subject,
     draft_outreach_email,
     find_contact,
@@ -292,6 +293,36 @@ def redraft_subject_for(prospect_id: int, body: str | None = None,
     if review:
         db.set_email_review(prospect_id, {**review, "remaining": remaining})
     return {"subject": new, "remaining": remaining}
+
+
+def redraft_body_for(prospect_id: int, subject: str | None = None,
+                     body: str | None = None,
+                     client: anthropic.Anthropic | None = None) -> dict:
+    """Write a new body for a prospect's drafted email, keep its subject, store both.
+
+    `subject`/`body` are what's in the editor (unsaved edits included), else the
+    stored draft; the body is passed so the new one differs from it. The new
+    body gets the same playbook checks + review as a full draft, but only the
+    body is taken from the review — the subject stays as given. Returns
+    {'subject', 'body', 'review'}. Raises LookupError if the prospect is gone,
+    ValueError if there's no draft yet.
+    """
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    email = rec.get("email")
+    if not email:
+        raise ValueError("No drafted email yet — draft one first.")
+    subject = subject if subject is not None else email.get("subject", "")
+    current = body if body is not None else email.get("body", "")
+    language = email.get("language") or get_output_language()
+    client = client or make_client()
+    new = draft_email_body(client, rec, subject, ICP, language, current)
+    final, review = _review_draft(client, rec, {"subject": subject, "body": new}, language)
+    review["remaining"] = lint_email(subject, final["body"], language)
+    db.set_email_text(prospect_id, subject, final["body"])
+    db.set_email_review(prospect_id, review)
+    return {"subject": subject, "body": final["body"], "review": review}
 
 
 def review_email_for(prospect_id: int,
