@@ -637,3 +637,53 @@ def test_discard_followup_restores_the_last_sent_email():
     assert (email["subject"], email["body"], email["followup"]) == ("Hola", "first body", False)
     assert email["review"] is None and email["sent_at"]
     assert db.blocked_drafts()["items"] == []
+
+
+def _sent_days_ago(pid, days):
+    """Backdate a prospect's last send by `days`."""
+    from datetime import datetime, timedelta, timezone
+    ts = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    with db._connect() as conn:
+        conn.execute("UPDATE prospects SET sent_at=? WHERE id=?", (ts, pid))
+        conn.execute("UPDATE sends SET sent_at=? WHERE prospect_id=?", (ts, pid))
+
+
+def _emailed(name="Acme"):
+    pid = db.insert_prospect(make_record(name))
+    db.set_prospect_email(pid, "Hola", "b")
+    db.mark_sent(pid, "m1", "t1", subject="Hola", body="b")
+    return pid
+
+
+def test_followup_becomes_due_after_the_configured_days(monkeypatch):
+    monkeypatch.setenv("FOLLOWUP_DAYS", "4,7")
+    pid = _emailed()
+    status = lambda: {r["id"]: r for r in db.active_contacts()}[pid]["status"]
+    _sent_days_ago(pid, 3)
+    assert status() == "sent" and db.queued_needing_draft() == []
+    _sent_days_ago(pid, 5)
+    assert status() == "followup-due" == db.get_prospect(pid)["draft_status"]
+    assert db.queued_needing_draft() == [{"id": pid, "company": "Acme", "drafted": False}]
+    assert db.prospects_to_draft([pid]) == [{"id": pid, "company": "Acme", "drafted": False}]
+
+    # drafting it takes it off "due"; sending it starts the next wait (7 days)
+    db.set_followup_draft(pid, "Re: Hola", "nudge")
+    assert status() != "followup-due"
+    db.mark_sent(pid, "m2", "t1", subject="Re: Hola", body="nudge")
+    _sent_days_ago(pid, 6)
+    assert status() == "sent"
+    _sent_days_ago(pid, 8)
+    assert status() == "followup-due"
+
+
+def test_no_followup_due_after_a_reply_or_past_the_schedule(monkeypatch):
+    monkeypatch.setenv("FOLLOWUP_DAYS", "4")
+    replied, done = _emailed("Replied"), _emailed("Done")
+    db.mark_replied(replied, "2026-09-18T10:00:00+00:00")
+    db.mark_sent(done, "m2", "t1", subject="Re: Hola", body="nudge")   # 1 follow-up sent
+    for pid in (replied, done):
+        _sent_days_ago(pid, 30)
+    assert {r["status"] for r in db.active_contacts()} == {"sent"}
+    monkeypatch.setenv("FOLLOWUP_DAYS", "off")
+    assert db.followup_due_at({"sent_at": "2026-01-01T00:00:00+00:00", "replied_at": None,
+                               "followup_at": None, "n_sends": 1}) is None

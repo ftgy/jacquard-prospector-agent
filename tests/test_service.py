@@ -922,3 +922,17 @@ def test_discard_followup_for():
     db.set_followup_draft(pid, "Re: x", "nudge")
     service.discard_followup_for(pid)
     assert db.get_prospect(pid)["email"]["body"] == "first body"
+
+
+def test_drafting_a_due_company_writes_a_followup(monkeypatch):
+    pid = _sent_prospect()
+    monkeypatch.setattr(service, "draft_outreach_email",
+                        lambda *a, **k: pytest.fail("not a first email"))
+    monkeypatch.setattr(service, "draft_followup_email",
+                        lambda client, rec, sends, icp, language, current="":
+                        {"subject": "Re: ¿Cuánto tarda un CV?", "body": "nudge"})
+    monkeypatch.setattr(service, "review_outreach_email",
+                        lambda client, rec, draft, icp, language, lint, sends=None:
+                        {"issues": [], "subject": draft["subject"], "body": draft["body"]})
+    service.draft_email_for(pid, client=FakeClient())
+    assert db.get_prospect(pid)["email"]["followup"] is True

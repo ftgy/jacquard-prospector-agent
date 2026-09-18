@@ -227,8 +227,9 @@ def draft_email_for(prospect_id: int, language: str | None = None,
     the playbook checks + Claude review over it (see _review_draft), stores the
     reviewed text, then looks up where to send it (the contact search only runs
     once — a stored contact is reused across regenerations). `language` is
-    'english' or 'spanish'; None uses next_draft_language. A prospect with a
-    follow-up pending gets a new follow-up instead (draft_followup_for).
+    'english' or 'spanish'; None uses next_draft_language. A prospect already
+    emailed (a follow-up due or pending) gets a follow-up instead
+    (draft_followup_for).
     Raises LookupError if the prospect is gone, ValueError if it's a
     failed-research row.
     """
@@ -238,7 +239,7 @@ def draft_email_for(prospect_id: int, language: str | None = None,
     if rec.get("error"):
         raise ValueError("This entry is a failed research record — there's nothing "
                          "to write an email from.")
-    if _followup_sends(rec):                       # "Draft selected" on a follow-up
+    if rec.get("sends"):                 # already emailed: the next one is a follow-up
         return draft_followup_for(prospect_id, language, client)
     language = language or next_draft_language(rec)
     client = client or make_client()

@@ -372,6 +372,7 @@
 
   .otable .pick input { cursor: pointer; accent-color: var(--accent); width: 15px; height: 15px; vertical-align: middle; }
   .oqueue .qstat.sent { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .oqueue .qstat.followup-due { color: var(--tier-c); background: color-mix(in srgb, var(--tier-c) 14%, transparent); }
   .drawer.email-only .dhead .fit, .drawer.email-only .dfoot { display: none; }
   .draft-prog { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
   .draft-prog.on { color: var(--accent-ink); }
@@ -790,7 +791,8 @@ async function loadGmailStatus(){
 }
 
 const QUEUE_LABEL = { ready: "ready to send", "needs-review": "⚠ check draft",
-  "no-contact": "no contact", waiting: "waiting for draft", sent: "✉ sent" };
+  "no-contact": "no contact", waiting: "waiting for draft", "followup-due": "↻ follow-up due",
+  sent: "✉ sent" };
 // Ticked unsent companies: "Draft all" becomes "Draft N selected". Kept across
 // table refreshes; ids that got sent or left the list drop out.
 const picked = new Set();
@@ -819,7 +821,7 @@ $("#o-pick-all").onclick = e => {
 // server's order (To do: oldest mark first; Sent: most recent send first).
 // Clicking a header sorts by it (Last sent starts newest-first); clicking it
 // again flips it. Blank values (no contact, no reply yet) always go last.
-const QUEUE_ORDER = ["ready", "needs-review", "no-contact", "waiting"];
+const QUEUE_ORDER = ["ready", "needs-review", "no-contact", "waiting", "followup-due"];
 const ACTIVE_SORT_KEYS = {
   company: r => (r.company || "").toLowerCase() || null,
   contact: r => (r.contact_email || "").toLowerCase() || null,
@@ -890,7 +892,8 @@ function drawTodo(rows){
     const cell = tr.querySelector("td.pick");
     cell.onclick = e => { if (e.target === cell){ e.stopPropagation(); cb.click(); } };  // easier target
     cell.appendChild(cb);
-    tr.onclick = () => openDrawer(r.id, {emailOnly: true});
+    // A due follow-up has no draft yet: open the history + "Draft follow-up".
+    tr.onclick = () => openDrawer(r.id, r.status === "followup-due" ? {sentOnly: true} : {emailOnly: true});
     host.appendChild(tr);
   }
 }
@@ -1443,10 +1446,10 @@ function emailSection(id, existing, queued, language, approved, sends){
   const followup = !!(existing && existing.followup);
   // "Remove" takes an unsent company off Active contacts (unmarks it "to
   // contact"; its draft is kept). Emailed companies stay listed, so no button.
-  // A pending follow-up has "Discard follow-up" instead: the company goes back
-  // to Sent and its draft reverts to the last email sent.
+  // A pending follow-up has "Discard follow-up" instead: its draft reverts to
+  // the last email sent (the company stays in To do if a follow-up is due).
   const discard = el("button", "icon-btn", "✕ Discard follow-up");
-  discard.title = "Drop this follow-up (nothing is sent; the company goes back to Sent)";
+  discard.title = "Drop this follow-up draft (nothing is sent)";
   discard.onclick = async () => {
     discard.disabled = true;
     try {

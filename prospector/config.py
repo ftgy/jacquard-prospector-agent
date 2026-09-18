@@ -115,6 +115,18 @@ def email_review_enabled() -> bool:
     return os.environ.get("EMAIL_REVIEW", "on").strip().lower() not in ("off", "0", "false")
 
 
+def get_followup_days() -> list[int]:
+    """The follow-up schedule: how many days after each email the next follow-up
+    is due, one entry per follow-up. FOLLOWUP_DAYS=4,7 (the default) means the
+    first follow-up is due 4 days after the first email and the second 7 days
+    after that; then no more. FOLLOWUP_DAYS=off (or empty) turns it off.
+    """
+    raw = os.environ.get("FOLLOWUP_DAYS", "4,7").strip().lower()
+    if raw in ("", "off", "0", "false"):
+        return []
+    return [int(d) for d in raw.split(",") if d.strip().isdigit() and int(d) > 0]
+
+
 def get_deepseek_model() -> str:
     """DeepSeek model on the personal-key backup route. Override with DEEPSEEK_MODEL."""
     return os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")

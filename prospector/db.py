@@ -20,6 +20,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .config import get_followup_days
+
 # Keep the store at the project root (one level up from this package), so it sits
 # beside .env / results.json regardless of where the package lives.
 DB_PATH = Path(__file__).resolve().parent.parent / "prospector.db"
@@ -30,6 +32,11 @@ _JSON_FIELDS = ("pain_points", "buying_signals", "red_flags", "sources")
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# The number of emails already sent to a prospect, as a column (n_sends) for the
+# queries whose rows go through draft_status.
+_N_SENDS = "(SELECT COUNT(*) FROM sends WHERE sends.prospect_id = prospects.id) AS n_sends"
 
 
 def _connect() -> sqlite3.Connection:
@@ -578,11 +585,12 @@ def list_prospects(tier: str | None = None, min_score: int | None = None,
 def get_prospect(prospect_id: int) -> dict | None:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT * FROM prospects WHERE id=?", (prospect_id,)
+            f"SELECT *, {_N_SENDS} FROM prospects WHERE id=?", (prospect_id,)
         ).fetchone()
     if not row:
         return None
     rec = row_to_record(row, full=True)
+    rec["followup_due_at"] = followup_due_at(row)
     rec["sends"] = list_sends(prospect_id)   # full outreach history, newest first
     return rec
 
@@ -693,15 +701,30 @@ def set_draft_approved(prospect_id: int, approved: bool) -> bool:
         return cur.rowcount > 0
 
 
+def followup_due_at(row) -> str | None:
+    """When the next follow-up to a sent prospect is due (UTC ISO), per the
+    FOLLOWUP_DAYS schedule counted from its last email; None if no follow-up is
+    coming — never sent, replied, one already drafted, or the schedule is used
+    up. Needs sent_at, replied_at, followup_at and n_sends on the row."""
+    days, n = get_followup_days(), row["n_sends"] or 0
+    if not row["sent_at"] or row["replied_at"] or row["followup_at"] or not 1 <= n <= len(days):
+        return None
+    due = datetime.fromisoformat(row["sent_at"]) + timedelta(days=days[n - 1])
+    return due.isoformat(timespec="seconds")
+
+
 def draft_status(row) -> str:
     """A prospect's Pipeline status from its row (needs sent_at, followup_at,
-    email_subject, email_review, contact_email, approved_at): 'sent' (and no
-    follow-up pending), 'waiting' (no draft yet), 'needs-review' (review failed
-    or rules still broken, unless approved by hand), 'no-contact', or 'ready'.
-    A pending follow-up gets the same draft statuses as a first email."""
+    replied_at, n_sends, email_subject, email_review, contact_email,
+    approved_at): 'sent' (and nothing pending), 'followup-due' (sent, and the
+    next follow-up is due — see followup_due_at — but not drafted yet),
+    'waiting' (no draft yet), 'needs-review' (review failed or rules still
+    broken, unless approved by hand), 'no-contact', or 'ready'. A pending
+    follow-up gets the same draft statuses as a first email."""
     review = json.loads(row["email_review"]) if row["email_review"] else None
     if row["sent_at"] and not row["followup_at"]:
-        return "sent"
+        due = followup_due_at(row)
+        return "followup-due" if due and due <= _now() else "sent"
     if not row["email_subject"]:
         return "waiting"
     if not row["approved_at"] and (not review or review.get("error") or review.get("remaining")):
@@ -727,7 +750,8 @@ def queued_needing_draft(limit: int | None = 10) -> list[dict]:
     """The auto-draft worklist: queued, not sent, and either never drafted or
     drafted but not yet reviewed (the review errored — e.g. the proxy was down).
     Pending follow-ups count too (they always have a draft, so only a failed
-    review puts them here).
+    review puts them here), and so do sent prospects whose follow-up is due
+    (after the first emails; they get a full follow-up draft).
     limit=None returns all of them.
 
     Returns [{'id', 'company', 'drafted'}], oldest mark first; 'drafted' tells the
@@ -746,15 +770,27 @@ def queued_needing_draft(limit: int | None = 10) -> list[dict]:
             work.append({"id": r["id"], "company": r["company"], "drafted": False})
         elif (review is None or review.get("error")) and not r["approved_at"]:
             work.append({"id": r["id"], "company": r["company"], "drafted": True})
-        if limit is not None and len(work) >= limit:
-            break
-    return work
+    work += [{"id": r["id"], "company": r["company"], "drafted": False}
+             for r in _followups_due()]
+    return work if limit is None else work[:limit]
+
+
+def _followups_due() -> list[sqlite3.Row]:
+    """Sent prospects whose next follow-up is due and not drafted yet, the
+    longest-waiting first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT *, {_N_SENDS} FROM prospects WHERE sent_at IS NOT NULL "
+            "AND followup_at IS NULL AND replied_at IS NULL AND error IS NULL "
+            "ORDER BY sent_at, id",
+        ).fetchall()
+    return [r for r in rows if draft_status(r) == "followup-due"]
 
 
 def prospects_to_draft(ids: list[int]) -> list[dict]:
     """The hand-picked worklist for "Draft selected": those of `ids` that are
-    unsent (or have a follow-up pending), successfully researched prospects,
-    oldest mark first. All get a full
+    unsent (or have a follow-up pending or due), successfully researched
+    prospects, oldest mark first. All get a full
     (re)draft — picking one is an explicit ask, even if it already has a draft.
     Same shape as queued_needing_draft."""
     if not ids:
@@ -762,12 +798,12 @@ def prospects_to_draft(ids: list[int]) -> list[dict]:
     marks = ",".join("?" * len(ids))
     with _connect() as conn:
         rows = conn.execute(
-            f"SELECT id, company FROM prospects WHERE id IN ({marks}) "
-            "AND (sent_at IS NULL OR followup_at IS NOT NULL) AND error IS NULL "
-            "ORDER BY COALESCE(queued_at, followup_at), id",
+            f"SELECT *, {_N_SENDS} FROM prospects WHERE id IN ({marks}) "
+            "AND error IS NULL ORDER BY COALESCE(queued_at, followup_at, sent_at), id",
             list(ids),
         ).fetchall()
-    return [{"id": r["id"], "company": r["company"], "drafted": False} for r in rows]
+    return [{"id": r["id"], "company": r["company"], "drafted": False}
+            for r in rows if draft_status(r) != "sent"]
 
 
 def blocked_drafts() -> dict:
@@ -813,15 +849,16 @@ def active_contacts() -> list[dict]:
     then everyone already emailed, each with its draft status and last send.
 
     status: see draft_status; 'approved' says a hand approval is in effect;
-    'followup' says the draft is a follow-up to an earlier send. Rows with an
+    'followup' says the draft is a follow-up to an earlier send, and
+    'followup_due_at' when the next one is due (see followup_due_at). Rows with an
     unsent draft come first (first emails by mark, then follow-ups, oldest
     first); fully sent rows follow, most recent send first.
     """
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, company, tier, fit_score, queued_at, email_subject, email_at, "
-            "contact_email, email_review, sent_at, replied_at, approved_at, followup_at "
-            "FROM prospects "
+            f"contact_email, email_review, sent_at, replied_at, approved_at, followup_at, "
+            f"{_N_SENDS} FROM prospects "
             "WHERE (queued_at IS NOT NULL OR sent_at IS NOT NULL) AND error IS NULL "
             "ORDER BY sent_at IS NOT NULL AND followup_at IS NULL, "
             "sent_at IS NOT NULL, "
@@ -840,6 +877,7 @@ def active_contacts() -> list[dict]:
             "fixes": len((review or {}).get("issues") or []),
             "approved": bool(r["approved_at"]) and status != "sent",
             "followup": bool(r["followup_at"]),
+            "followup_due_at": followup_due_at(r),
             "sent_at": r["sent_at"], "replied_at": r["replied_at"],
         })
     return out
