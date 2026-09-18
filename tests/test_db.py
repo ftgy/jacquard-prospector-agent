@@ -559,3 +559,44 @@ def test_set_draft_language():
     assert db.set_draft_language(pid, "english")
     assert db.get_prospect(pid)["draft_lang"] == "english"
     assert not db.set_draft_language(9999, "english")
+
+
+def _blocked_draft(name="Acme", contact="hola@acme.es"):
+    """A queued prospect whose reviewed draft still breaks a rule."""
+    pid = db.insert_prospect(make_record(name))
+    db.set_queued(pid, True)
+    db.set_prospect_email(pid, "s", "b", "spanish")
+    db.set_email_review(pid, {"issues": [], "error": None,
+                              "remaining": [{"rule": "x", "detail": "y"}]})
+    if contact:
+        db.set_prospect_contact(pid, contact)
+    return pid
+
+
+def test_approval_makes_a_blocked_draft_ready():
+    pid = _blocked_draft()
+    status = lambda: {r["id"]: r for r in db.active_contacts()}[pid]
+    assert status()["status"] == "needs-review" and db.blocked_drafts()["items"]
+    assert db.set_draft_approved(pid, True)
+    assert status()["status"] == "ready" and status()["approved"] is True
+    assert db.get_prospect(pid)["draft_status"] == "ready"
+    assert db.blocked_drafts()["items"] == []            # no longer blocked
+    db.set_draft_approved(pid, False)
+    assert status()["status"] == "needs-review"
+    assert not db.set_draft_approved(9999, True)
+
+
+def test_approval_still_needs_a_contact_and_resets_on_new_draft():
+    pid = _blocked_draft(contact=None)
+    db.set_draft_approved(pid, True)
+    assert db.get_prospect(pid)["draft_status"] == "no-contact"
+    db.set_prospect_email(pid, "s2", "b2", "spanish")      # a fresh draft
+    assert db.get_prospect(pid)["approved_at"] is None
+
+
+def test_approved_draft_with_failed_review_is_not_rereviewed():
+    pid = _blocked_draft()
+    db.set_email_review(pid, {"issues": [], "remaining": [], "error": "down"})
+    assert [w["id"] for w in db.queued_needing_draft()] == [pid]
+    db.set_draft_approved(pid, True)
+    assert db.queued_needing_draft() == []

@@ -303,7 +303,8 @@ def redraft_body_for(prospect_id: int, subject: str | None = None,
     `subject`/`body` are what's in the editor (unsaved edits included), else the
     stored draft; the body is passed so the new one differs from it. The new
     body gets the same playbook checks + review as a full draft, but only the
-    body is taken from the review — the subject stays as given. Returns
+    body is taken from the review — the subject stays as given. Clears a hand
+    approval, like a full redraft does. Returns
     {'subject', 'body', 'review'}. Raises LookupError if the prospect is gone,
     ValueError if there's no draft yet.
     """
@@ -322,6 +323,7 @@ def redraft_body_for(prospect_id: int, subject: str | None = None,
     review["remaining"] = lint_email(subject, final["body"], language)
     db.set_email_text(prospect_id, subject, final["body"])
     db.set_email_review(prospect_id, review)
+    db.set_draft_approved(prospect_id, False)   # a new body needs a fresh look
     return {"subject": subject, "body": final["body"], "review": review}
 
 

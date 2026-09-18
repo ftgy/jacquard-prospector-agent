@@ -79,6 +79,10 @@ class EmailRequest(BaseModel):
     language: str | None = Field(None, pattern="^(english|spanish)$")
 
 
+class ApprovalRequest(BaseModel):
+    approved: bool
+
+
 class LanguageRequest(BaseModel):
     language: Literal["english", "spanish"]
 
@@ -134,6 +138,17 @@ def api_set_notes(prospect_id: int, req: NotesRequest):
     if not db.set_prospect_notes(prospect_id, req.notes):
         raise HTTPException(404, "prospect not found")
     return {"id": prospect_id, "notes": req.notes.strip() or None}
+
+
+@app.put("/api/prospects/{prospect_id}/approval")
+def api_set_approval(prospect_id: int, req: ApprovalRequest):
+    """Approve the draft by hand so it's ready to send despite review findings
+    (the drawer's status selector), or go back to the review's verdict.
+    Returns the prospect's resulting Pipeline status."""
+    if not db.set_draft_approved(prospect_id, req.approved):
+        raise HTTPException(404, "prospect not found")
+    return {"id": prospect_id, "approved": req.approved,
+            "status": db.get_prospect(prospect_id)["draft_status"]}
 
 
 @app.put("/api/prospects/{prospect_id}/language")

@@ -472,3 +472,18 @@ def test_redraft_body_endpoint(client, monkeypatch):
         raise LookupError
     monkeypatch.setattr(service, "redraft_body_for", missing)
     assert client.post("/api/prospects/9999/email/body").status_code == 404
+
+
+def test_approval_endpoint(client):
+    from prospector import db
+    from tests.conftest import make_record
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "s", "b", "spanish")
+    db.set_email_review(pid, {"issues": [], "error": None, "remaining": [{"rule": "x"}]})
+    db.set_prospect_contact(pid, "hola@acme.es")
+    res = client.put(f"/api/prospects/{pid}/approval", json={"approved": True}).json()
+    assert res == {"id": pid, "approved": True, "status": "ready"}
+    assert client.get(f"/api/prospects/{pid}").json()["approved_at"]
+    res = client.put(f"/api/prospects/{pid}/approval", json={"approved": False}).json()
+    assert res["status"] == "needs-review"
+    assert client.put("/api/prospects/9999/approval", json={"approved": True}).status_code == 404

@@ -822,3 +822,24 @@ def test_redraft_body_needs_a_draft():
         service.redraft_body_for(pid, client=FakeClient())
     with pytest.raises(LookupError):
         service.redraft_body_for(9999, client=FakeClient())
+
+
+def test_send_ready_includes_approved_drafts(monkeypatch):
+    sent = _fake_gmail(monkeypatch)
+    pid = _ready("A")
+    db.set_email_review(pid, {"issues": [], "remaining": [{"rule": "x"}], "error": None})
+    service.send_ready(pace=0)
+    assert sent == []                                  # blocked: not sent
+    db.set_draft_approved(pid, True)
+    service.send_ready(pace=0)
+    assert sent == ["subj A"]
+
+
+def test_redraft_body_clears_approval(monkeypatch):
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "s", "b", "spanish")
+    db.set_draft_approved(pid, True)
+    monkeypatch.setattr(service, "draft_email_body", lambda *a: "nuevo")
+    monkeypatch.setattr(service, "email_review_enabled", lambda: False)
+    service.redraft_body_for(pid, client=FakeClient())
+    assert db.get_prospect(pid)["approved_at"] is None

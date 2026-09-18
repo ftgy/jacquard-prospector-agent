@@ -271,6 +271,10 @@
     font-size: 12px; font-family: var(--mono); }
   .lang-opt + .lang-opt { border-left: 1px solid var(--hairline); }
   .lang-opt.on { background: var(--accent); color: #fff; }
+  .status-sel { font-family: inherit; font-size: 13px; color: var(--ink-2); cursor: pointer;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px; padding: 6px 8px; }
+  .status-sel:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    outline-offset: 1px; border-color: var(--accent); }
   .email-out { margin-top: 12px; }
   .email-saved { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 8px; }
   .email-draft .email-subj { display: flex; gap: 10px; align-items: center; padding: 9px 12px;
@@ -852,7 +856,8 @@ function drawActive(){
       <td class="co">${esc(r.company)}<span class="line">${esc(r.subject || "")}</span></td>
       <td><span class="to">${esc(r.contact_email || "—")}</span></td>
       <td><span class="qstat ${esc(r.status)}">${esc(QUEUE_LABEL[r.status] || r.status)}</span>${
-        r.fixes && r.status !== "sent" ? `<span class="fixes">${esc(plural(r.fixes, "fix", "fixes"))}</span>` : ""}</td>
+        r.approved ? `<span class="fixes" title="Approved by hand despite the review">✓ approved</span>`
+        : r.fixes && r.status !== "sent" ? `<span class="fixes">${esc(plural(r.fixes, "fix", "fixes"))}</span>` : ""}</td>
       <td>${sent}</td>
       <td>${reply}</td>`;
     if (r.status !== "sent"){
@@ -1329,7 +1334,8 @@ async function openDrawer(id, opts = {}){
   if (isErr){
     body.appendChild(sec("Research failed", `<div class="errbox">${esc(r.error)}</div>`));
   } else if (emailOnly){
-    body.appendChild(emailSection(id, r.email, r.sends || [], !!r.queued_at, r.next_language));
+    body.appendChild(emailSection(id, r.email, r.sends || [], !!r.queued_at, r.next_language,
+                                  !!r.approved_at));
   } else {
     if (r.outreach_angle) body.appendChild(sec("Outreach angle", `<div class="angle">${esc(r.outreach_angle)}</div>`));
     if (r.pain_points?.length){
@@ -1353,7 +1359,7 @@ async function openDrawer(id, opts = {}){
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
 
-function emailSection(id, existing, sends, queued, language){
+function emailSection(id, existing, sends, queued, language, approved){
   const s = el("div", "sec email");
   sends = sends || [];
   // "Remove" takes an unsent company off Active contacts (unmarks it "to
@@ -1397,11 +1403,35 @@ function emailSection(id, existing, sends, queued, language){
     };
     seg.appendChild(b);
   }
+  // Draft status: "Auto" follows the review; "Approved" marks a draft that
+  // broke a rule as ready to send anyway (a new draft or body clears it).
+  const status = el("select", "status-sel");
+  status.title = "Approve this draft to send it despite the review's findings";
+  for (const [val, label] of [["auto", "Status: auto (review)"], ["approved", "✓ Approved to send"]]){
+    const o = el("option", null, label); o.value = val; status.appendChild(o);
+  }
+  status.value = approved ? "approved" : "auto";
+  status.onchange = async () => {
+    const want = status.value === "approved";
+    try {
+      const res = await fetch(`/api/prospects/${id}/approval`, {method:"PUT",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ approved: want })});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      const data = await res.json();
+      approved = want;
+      toast(!want ? "Status follows the review again."
+          : data.status === "no-contact" ? "Approved — find a contact address to send it."
+          : "Approved — ready to send.");
+      refreshAfterDrawerChange();
+    } catch (e){ toast("Couldn't change the status: " + e.message); status.value = approved ? "approved" : "auto"; }
+  };
+
   const unsent = !(existing && existing.sent_at);
   if (existing || unsent){
     const bar = el("div", "email-gen");
     bar.appendChild(tools);
     if (unsent) bar.appendChild(seg);
+    if (unsent && existing) bar.appendChild(status);
     if (unsent && queued) bar.appendChild(remove);
     s.append(bar);
   }
