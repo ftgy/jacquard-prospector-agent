@@ -600,3 +600,40 @@ def test_approved_draft_with_failed_review_is_not_rereviewed():
     assert [w["id"] for w in db.queued_needing_draft()] == [pid]
     db.set_draft_approved(pid, True)
     assert db.queued_needing_draft() == []
+
+
+def test_followup_draft_moves_a_sent_prospect_back_to_to_do_until_sent():
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "Hola", "first body", "spanish")
+    db.set_prospect_contact(pid, "hola@acme.es")
+    db.mark_sent(pid, "m1", "t1", subject="Hola", body="first body")
+    status = lambda: {r["id"]: r for r in db.active_contacts()}[pid]
+    assert status()["status"] == "sent" and not status()["followup"]
+
+    db.set_followup_draft(pid, "Re: Hola", "nudge", "spanish")
+    db.set_email_review(pid, {"remaining": [], "error": None})
+    row = status()
+    assert row["status"] == "ready" and row["followup"]
+    email = db.get_prospect(pid)["email"]
+    assert email["followup"] and email["sent_at"] is None      # an unsent draft
+    assert db.prospects_to_draft([pid]) == [{"id": pid, "company": "Acme", "drafted": False}]
+
+    db.mark_sent(pid, "m2", "t1", subject="Re: Hola", body="nudge")
+    assert status()["status"] == "sent" and not status()["followup"]
+    assert [s["subject"] for s in db.list_sends(pid)] == ["Re: Hola", "Hola"]
+    assert db.list_sends(pid)[0]["thread_id"] == "t1"
+
+
+def test_discard_followup_restores_the_last_sent_email():
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "Hola", "first body")
+    db.mark_sent(pid, "m1", "t1", subject="Hola", body="first body")
+    assert db.discard_followup(pid) is False                    # nothing pending
+    db.set_followup_draft(pid, "Re: Hola", "nudge")
+    db.set_email_review(pid, {"remaining": [{"rule": "length", "detail": "x"}]})
+    assert [i["id"] for i in db.blocked_drafts()["items"]] == [pid]
+    assert db.discard_followup(pid) is True
+    email = db.get_prospect(pid)["email"]
+    assert (email["subject"], email["body"], email["followup"]) == ("Hola", "first body", False)
+    assert email["review"] is None and email["sent_at"]
+    assert db.blocked_drafts()["items"] == []

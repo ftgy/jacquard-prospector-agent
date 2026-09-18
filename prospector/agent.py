@@ -650,6 +650,7 @@ SELF_INTRO = {
 # outreach voice can be tuned without touching this module (see prospector/docs.py):
 #   - studio brief  -> prospector/prompts/studio-brief.md
 #   - email playbook -> prospector/prompts/email-playbook.md
+#   - follow-up playbook -> prospector/prompts/followup-playbook.md
 
 
 def about_feina() -> str:
@@ -662,14 +663,24 @@ def email_playbook() -> str:
     return load_prompt("email-playbook")
 
 
-def _email_system(icp: str, language: str) -> str:
-    lang = _LANGUAGES.get(language, "English")
-    intro = SELF_INTRO.get(language, SELF_INTRO["english"])
+def followup_playbook() -> str:
+    """A follow-up's shape and hard rules (prompt fragment)."""
+    return load_prompt("followup-playbook")
+
+
+def _language_note(language: str) -> tuple[str, str]:
+    """(language name, the Spanish register note) for the email briefs."""
     es_note = (' (in Spanish, address the reader as a team with the Spain '
                'second-person plural "vosotros"/"vuestro" and the -áis/-éis verb '
                'endings — the natural, peer-to-peer register; never the formal '
                '"usted", which reads like a bank, and never the singular "tú")'
                if language == "spanish" else "")
+    return _LANGUAGES.get(language, "English"), es_note
+
+
+def _email_system(icp: str, language: str) -> str:
+    lang, es_note = _language_note(language)
+    intro = SELF_INTRO.get(language, SELF_INTRO["english"])
     return f"""You write ONE cold outreach email on behalf of \
 {SENDER_NAME}, who runs {WEBSITE} — a small Barcelona engineering studio. It is a \
 personal note from one person to another, signed by {SENDER_NAME}: the sender's own \
@@ -712,6 +723,76 @@ with; never restate it to the reader):
 End with a short valediction ("Un saludo," in Spanish) on its own line, then the \
 sender's name "{SENDER_NAME}" on the next line, then "{SIGNATURE_LINKS}" on the line \
 right below it, verbatim, as a plain signature."""
+
+
+def _followup_system(icp: str, language: str) -> str:
+    lang, es_note = _language_note(language)
+    return f"""You write ONE short follow-up email on behalf of {SENDER_NAME}, who \
+runs {WEBSITE} — a small Barcelona engineering studio. He already sent this company \
+a cold outreach email (shown below the prospect facts) and got no reply. The \
+follow-up goes out as a reply in the same thread, so the reader sees the earlier \
+email(s) right below it. The goal is still to earn a short reply, not to close a sale.
+
+Write the body in {lang}, in natural, idiomatic, plain-spoken business \
+{lang}{es_note}. The subject is fixed (the thread's "Re: …"), so write only the body.
+
+{followup_playbook()}
+
+Background on the studio — use it only if it helps the one new thing, and never \
+summarize it:
+{about_feina()}
+
+Who I look for (my ICP — use it to judge which angle matters; never restate it):
+{icp}
+
+End with a short valediction ("Un saludo," in Spanish) on its own line, then the \
+sender's name "{SENDER_NAME}" on the next line, then "{SIGNATURE_LINKS}" on the line \
+right below it, verbatim, as a plain signature."""
+
+
+def _sends_context(sends: list[dict]) -> str:
+    """The emails already sent to a prospect, oldest first (sends come newest first)."""
+    parts = []
+    for i, sd in enumerate(reversed(sends), 1):
+        parts.append(f"--- Email {i}, sent {(sd.get('sent_at') or '')[:10]} ---\n"
+                     f"Subject: {sd.get('subject') or ''}\n\n{sd.get('body') or ''}")
+    return "\n\n".join(parts)
+
+
+def followup_subject(sends: list[dict]) -> str:
+    """A follow-up's subject: "Re: " + the thread's first subject, so Gmail and the
+    reader's client keep it in the same thread."""
+    first = (sends[-1].get("subject") or "").strip() if sends else ""
+    while first.lower().startswith("re:"):
+        first = first[3:].strip()
+    return f"Re: {first}" if first else "Re:"
+
+
+def draft_followup_email(client: anthropic.Anthropic, record: dict, sends: list[dict],
+                         icp: str, language: str | None = None,
+                         current: str = "") -> dict:
+    """Draft a follow-up to the emails already sent to a prospect (`sends`,
+    newest first, as db.list_sends returns them). Same provider as
+    draft_outreach_email; `current` is a follow-up body being replaced, passed so
+    the model offers a different take. Returns {'subject', 'body'} — the subject
+    is the thread's fixed "Re: …", only the body is written."""
+    system = _followup_system(icp, language or get_output_language())
+    n = len(sends)
+    ask = (f"Write follow-up number {n} to this company (the earlier "
+           f"{'email' if n == 1 else f'{n} emails'} below got no reply), grounded "
+           "only in the facts below.")
+    if current.strip():
+        ask += " Give a clearly different take from the current follow-up (below)."
+    ask += ("\n\n=== PROSPECT ===\n" + _email_context(record)
+            + "\n\n=== ALREADY SENT (oldest first) ===\n" + _sends_context(sends))
+    if current.strip():
+        ask += "\n\n=== CURRENT FOLLOW-UP (replace it) ===\n" + current
+    if get_email_provider() == "deepseek":
+        out = _structure_deepseek(system, ask, BODY_SCHEMA, max_tokens=1500)
+    else:
+        out = _structure(client, system, ask, BODY_SCHEMA,
+                         max_tokens=1500, model=get_email_model())
+    return {"subject": followup_subject(sends), "body": out["body"].strip()}
 
 
 def _email_context(record: dict) -> str:
@@ -874,17 +955,26 @@ before the ask, a flat or AI-sounding subject.
 
 def review_outreach_email(client: anthropic.Anthropic, record: dict, draft: dict,
                           icp: str, language: str,
-                          lint_issues: list[dict] | None = None) -> dict:
+                          lint_issues: list[dict] | None = None,
+                          sends: list[dict] | None = None) -> dict:
     """Check a drafted email against the playbook and fix what it breaks.
 
     Always runs on Anthropic (config.get_review_model), whichever provider wrote
     the draft. `lint_issues` are the deterministic findings (email_lint) passed in
-    as a head start. Returns {'issues', 'subject', 'body'}; the edits are minimal,
-    so a clean draft comes back unchanged.
+    as a head start. `sends` (the emails already sent) marks the draft as a
+    follow-up: it's checked against the follow-up brief, with those emails as
+    context, and its subject is kept as is. Returns {'issues', 'subject', 'body'};
+    the edits are minimal, so a clean draft comes back unchanged.
     """
-    system = _REVIEW_EDITOR + _email_system(icp, language)
+    if sends:
+        system = (_REVIEW_EDITOR.replace("a cold outreach email", "a follow-up email")
+                  + _followup_system(icp, language))
+    else:
+        system = _REVIEW_EDITOR + _email_system(icp, language)
     flagged = "\n".join(f"- [{i['rule']}] {i['detail']}" for i in lint_issues or [])
     ask = ("=== PROSPECT RESEARCH ===\n" + _email_context(record)
+           + ("\n\n=== ALREADY SENT (oldest first) ===\n" + _sends_context(sends)
+              if sends else "")
            + "\n\n=== AUTOMATIC CHECKS FLAGGED ===\n" + (flagged or "(nothing)")
            + "\n\n=== DRAFT ===\nSubject: " + draft.get("subject", "")
            + "\n\n" + draft.get("body", ""))
@@ -894,7 +984,8 @@ def review_outreach_email(client: anthropic.Anthropic, record: dict, draft: dict
                      max_tokens=16000, model=get_review_model())
     return {
         "issues": [i for i in out.get("issues") or [] if isinstance(i, dict)],
-        "subject": out.get("subject") or draft.get("subject", ""),
+        "subject": (draft.get("subject", "") if sends
+                    else out.get("subject") or draft.get("subject", "")),
         "body": out.get("body") or draft.get("body", ""),
     }
 

@@ -99,6 +99,7 @@ def init_db() -> None:
                 email_review     TEXT,   -- JSON: lint + Claude review of the draft
                 draft_lang       TEXT,   -- language the next draft is written in
                 approved_at      TEXT,   -- draft approved by hand despite review findings
+                followup_at      TEXT,   -- the draft is an unsent follow-up (when drafted)
                 error            TEXT,
                 created_at       TEXT NOT NULL
             );
@@ -132,7 +133,7 @@ def init_db() -> None:
                     "email_lang", "contact_email", "contact_phone", "contact_website",
                     "contact_source", "contact_at", "sent_at", "gmail_message_id",
                     "gmail_thread_id", "replied_at", "queued_at", "email_review",
-                    "draft_lang", "approved_at"):
+                    "draft_lang", "approved_at", "followup_at"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT")
         # runs.category_id was added after the first release (niche categories).
@@ -507,12 +508,17 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
         rec["draft_lang"] = row["draft_lang"]
         rec["approved_at"] = row["approved_at"]
         rec["draft_status"] = draft_status(row)
+        # A pending follow-up is a fresh, unsent draft: its sent/replied state
+        # is blank (the earlier sends live in the sends history).
+        followup = bool(row["followup_at"])
         rec["email"] = (
             {"subject": row["email_subject"], "body": row["email_body"],
              "generated_at": row["email_at"], "language": row["email_lang"],
              "contact": _contact_dict(row),
              "review": json.loads(row["email_review"]) if row["email_review"] else None,
-             "sent_at": row["sent_at"], "replied_at": row["replied_at"]}
+             "followup": followup,
+             "sent_at": None if followup else row["sent_at"],
+             "replied_at": None if followup else row["replied_at"]}
             if row["email_subject"] else None
         )
         rec["research_summary"] = row["research_summary"]
@@ -610,6 +616,37 @@ def set_prospect_email(prospect_id: int, subject: str, body: str,
         return cur.rowcount > 0
 
 
+def set_followup_draft(prospect_id: int, subject: str, body: str,
+                       language: str = "english") -> bool:
+    """Store a follow-up draft for an already-emailed prospect: it becomes the
+    current draft (like set_prospect_email) and followup_at marks it unsent, so
+    the prospect is back in To do until it's sent or discarded."""
+    ts = _now()
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET email_subject=?, email_body=?, email_at=?, "
+            "email_lang=?, approved_at=NULL, followup_at=? WHERE id=?",
+            (subject, body, ts, language, ts, prospect_id),
+        )
+        return cur.rowcount > 0
+
+
+def discard_followup(prospect_id: int) -> bool:
+    """Drop a pending follow-up draft: the current draft goes back to the last
+    email actually sent (and its review is cleared), so the prospect returns to
+    Sent. Returns False if there's no pending follow-up."""
+    with _connect() as conn:
+        last = conn.execute(
+            "SELECT subject, body FROM sends WHERE prospect_id=? ORDER BY id DESC LIMIT 1",
+            (prospect_id,)).fetchone()
+        cur = conn.execute(
+            "UPDATE prospects SET email_subject=?, email_body=?, email_review=NULL, "
+            "approved_at=NULL, followup_at=NULL WHERE id=? AND followup_at IS NOT NULL",
+            (last["subject"] if last else None, last["body"] if last else None,
+             prospect_id))
+        return cur.rowcount > 0
+
+
 def set_email_text(prospect_id: int, subject: str, body: str) -> bool:
     """Replace the stored draft's subject and body (hand edits); keeps its
     language and drafted-at time."""
@@ -657,12 +694,13 @@ def set_draft_approved(prospect_id: int, approved: bool) -> bool:
 
 
 def draft_status(row) -> str:
-    """A prospect's Pipeline status from its row (needs sent_at, email_subject,
-    email_review, contact_email, approved_at): 'sent', 'waiting' (no draft yet),
-    'needs-review' (review failed or rules still broken, unless approved by
-    hand), 'no-contact', or 'ready'."""
+    """A prospect's Pipeline status from its row (needs sent_at, followup_at,
+    email_subject, email_review, contact_email, approved_at): 'sent' (and no
+    follow-up pending), 'waiting' (no draft yet), 'needs-review' (review failed
+    or rules still broken, unless approved by hand), 'no-contact', or 'ready'.
+    A pending follow-up gets the same draft statuses as a first email."""
     review = json.loads(row["email_review"]) if row["email_review"] else None
-    if row["sent_at"]:
+    if row["sent_at"] and not row["followup_at"]:
         return "sent"
     if not row["email_subject"]:
         return "waiting"
@@ -688,6 +726,8 @@ def set_queued(prospect_id: int, queued: bool) -> bool:
 def queued_needing_draft(limit: int | None = 10) -> list[dict]:
     """The auto-draft worklist: queued, not sent, and either never drafted or
     drafted but not yet reviewed (the review errored — e.g. the proxy was down).
+    Pending follow-ups count too (they always have a draft, so only a failed
+    review puts them here).
     limit=None returns all of them.
 
     Returns [{'id', 'company', 'drafted'}], oldest mark first; 'drafted' tells the
@@ -696,8 +736,8 @@ def queued_needing_draft(limit: int | None = 10) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, company, email_subject, email_review, approved_at FROM prospects "
-            "WHERE queued_at IS NOT NULL AND sent_at IS NULL AND error IS NULL "
-            "ORDER BY queued_at, id",
+            "WHERE ((queued_at IS NOT NULL AND sent_at IS NULL) OR followup_at IS NOT NULL) "
+            "AND error IS NULL ORDER BY COALESCE(queued_at, followup_at), id",
         ).fetchall()
     work = []
     for r in rows:
@@ -713,7 +753,8 @@ def queued_needing_draft(limit: int | None = 10) -> list[dict]:
 
 def prospects_to_draft(ids: list[int]) -> list[dict]:
     """The hand-picked worklist for "Draft selected": those of `ids` that are
-    unsent, successfully researched prospects, oldest mark first. All get a full
+    unsent (or have a follow-up pending), successfully researched prospects,
+    oldest mark first. All get a full
     (re)draft — picking one is an explicit ask, even if it already has a draft.
     Same shape as queued_needing_draft."""
     if not ids:
@@ -722,14 +763,16 @@ def prospects_to_draft(ids: list[int]) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
             f"SELECT id, company FROM prospects WHERE id IN ({marks}) "
-            "AND sent_at IS NULL AND error IS NULL ORDER BY queued_at, id",
+            "AND (sent_at IS NULL OR followup_at IS NOT NULL) AND error IS NULL "
+            "ORDER BY COALESCE(queued_at, followup_at), id",
             list(ids),
         ).fetchall()
     return [{"id": r["id"], "company": r["company"], "drafted": False} for r in rows]
 
 
 def blocked_drafts() -> dict:
-    """Unsent drafts that failed review, with why — for manual analysis.
+    """Unsent drafts (first emails or follow-ups) that failed review, with why —
+    for manual analysis.
 
     Blocked means the Claude review errored, or deterministic rules still fail on
     the reviewed text (review['remaining']). Returns {'summary': [{'rule',
@@ -741,8 +784,8 @@ def blocked_drafts() -> dict:
         rows = conn.execute(
             "SELECT id, company, tier, fit_score, queued_at, email_subject, email_at, "
             "email_review FROM prospects "
-            "WHERE email_review IS NOT NULL AND sent_at IS NULL AND error IS NULL "
-            "AND approved_at IS NULL ORDER BY email_at DESC, id DESC",
+            "WHERE email_review IS NOT NULL AND (sent_at IS NULL OR followup_at IS NOT NULL) "
+            "AND error IS NULL AND approved_at IS NULL ORDER BY email_at DESC, id DESC",
         ).fetchall()
     items, counts = [], {}
     for r in rows:
@@ -769,17 +812,21 @@ def active_contacts() -> list[dict]:
     """The Outreach pipeline: prospects marked "to contact" and not yet sent,
     then everyone already emailed, each with its draft status and last send.
 
-    status: see draft_status; 'approved' says a hand approval is in effect.
-    Unsent rows come first,
-    oldest mark first; sent rows follow, most recent send first.
+    status: see draft_status; 'approved' says a hand approval is in effect;
+    'followup' says the draft is a follow-up to an earlier send. Rows with an
+    unsent draft come first (first emails by mark, then follow-ups, oldest
+    first); fully sent rows follow, most recent send first.
     """
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, company, tier, fit_score, queued_at, email_subject, email_at, "
-            "contact_email, email_review, sent_at, replied_at, approved_at FROM prospects "
+            "contact_email, email_review, sent_at, replied_at, approved_at, followup_at "
+            "FROM prospects "
             "WHERE (queued_at IS NOT NULL OR sent_at IS NOT NULL) AND error IS NULL "
-            "ORDER BY sent_at IS NOT NULL, "
-            "CASE WHEN sent_at IS NULL THEN queued_at END, sent_at DESC, id",
+            "ORDER BY sent_at IS NOT NULL AND followup_at IS NULL, "
+            "sent_at IS NOT NULL, "
+            "CASE WHEN sent_at IS NULL THEN queued_at ELSE followup_at END, "
+            "sent_at DESC, id",
         ).fetchall()
     out = []
     for r in rows:
@@ -792,6 +839,7 @@ def active_contacts() -> list[dict]:
             "contact_email": r["contact_email"], "status": status,
             "fixes": len((review or {}).get("issues") or []),
             "approved": bool(r["approved_at"]) and status != "sent",
+            "followup": bool(r["followup_at"]),
             "sent_at": r["sent_at"], "replied_at": r["replied_at"],
         })
     return out
@@ -820,13 +868,14 @@ def mark_sent(prospect_id: int, message_id: str, thread_id: str,
     Appends a row to the sends history (snapshotting the subject/body/address
     that went out) and refreshes the last-send cache on the prospect: sent_at
     (now), the Gmail message/thread ids, and replied_at cleared since this is a
-    fresh send. Returns False if there's no such prospect.
+    fresh send. Sending a follow-up clears its pending mark. Returns False if
+    there's no such prospect.
     """
     ts = _now()
     with _connect() as conn:
         cur = conn.execute(
             "UPDATE prospects SET sent_at=?, gmail_message_id=?, "
-            "gmail_thread_id=?, replied_at=NULL WHERE id=?",
+            "gmail_thread_id=?, replied_at=NULL, followup_at=NULL WHERE id=?",
             (ts, message_id, thread_id, prospect_id),
         )
         if cur.rowcount == 0:
@@ -865,14 +914,14 @@ def list_sends(prospect_id: int) -> list[dict]:
     """A prospect's outreach history, most recent send first."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT subject, body, contact_email, sent_at, replied_at "
+            "SELECT subject, body, contact_email, gmail_thread_id, sent_at, replied_at "
             "FROM sends WHERE prospect_id=? ORDER BY id DESC",
             (prospect_id,),
         ).fetchall()
     return [
         {"subject": r["subject"], "body": r["body"],
-         "contact_email": r["contact_email"], "sent_at": r["sent_at"],
-         "replied_at": r["replied_at"]}
+         "contact_email": r["contact_email"], "thread_id": r["gmail_thread_id"],
+         "sent_at": r["sent_at"], "replied_at": r["replied_at"]}
         for r in rows
     ]
 

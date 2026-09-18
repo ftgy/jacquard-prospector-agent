@@ -21,8 +21,9 @@ from .agent import SELF_INTRO, SENDER_NAME, SIGNATURE_LINKS
 ASK_OPENER = {"spanish": "¿Os cuadra agendar una llamada de 20 minutos para"}
 
 # Playbook: "Aim for 150–180 words — a ceiling, not a target." Counted on the body
-# without the signature block.
+# without the signature block. A follow-up is a short nudge (followup-playbook).
 MAX_WORDS = 180
+MAX_FOLLOWUP_WORDS = 90
 # Playbook asks for ~20 words per sentence; flag only the clearly runaway ones.
 MAX_SENTENCE_WORDS = 35
 
@@ -65,16 +66,22 @@ def _split_signature(body: str) -> tuple[str, str]:
     return (body[:idx], body[idx:]) if idx != -1 else (body, "")
 
 
-def lint_email(subject: str, body: str, language: str = "spanish") -> list[dict]:
-    """Check one draft against the mechanical playbook rules."""
+def lint_email(subject: str, body: str, language: str = "spanish",
+               followup: bool = False) -> list[dict]:
+    """Check one draft against the mechanical playbook rules.
+
+    followup=True checks a follow-up instead: no fixed self-intro or ask opener,
+    a tighter word ceiling, and no subject rules (it keeps the thread's "Re: …").
+    """
     issues: list[dict] = []
 
     def flag(rule: str, detail: str) -> None:
         issues.append({"rule": rule, "detail": detail})
 
     flat = _squash(body)
-    for rule, fixed in (("self-intro", SELF_INTRO.get(language)),
-                        ("ask-opener", ASK_OPENER.get(language))):
+    fixed_lines = () if followup else (("self-intro", SELF_INTRO.get(language)),
+                                       ("ask-opener", ASK_OPENER.get(language)))
+    for rule, fixed in fixed_lines:
         if fixed and _squash(fixed) not in flat:
             flag(rule, f"Missing the fixed line, verbatim: “{fixed}”")
 
@@ -93,15 +100,17 @@ def lint_email(subject: str, body: str, language: str = "spanish") -> list[dict]
     if _URL.search(prose):
         flag("url-in-body", "Links belong only on the signature line.")
 
-    words = len(prose.split())
-    if words > MAX_WORDS:
-        flag("length", f"{words} words before the signature (ceiling {MAX_WORDS}).")
+    words, ceiling = len(prose.split()), MAX_FOLLOWUP_WORDS if followup else MAX_WORDS
+    if words > ceiling:
+        flag("length", f"{words} words before the signature (ceiling {ceiling}).")
 
     for sentence in re.split(r"(?<=[.?!])\s+", _squash(prose)):
         n = len(sentence.split())
         if n > MAX_SENTENCE_WORDS:
             flag("long-sentence", f"{n} words: “{sentence[:80]}…”")
 
+    if followup:
+        return issues
     if re.search(r"\b(AI|IA)\b", subject):
         flag("subject", "Subject mentions AI/IA.")
     if re.match(r"\s*automatiza", subject, re.I):

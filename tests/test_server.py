@@ -194,7 +194,7 @@ def test_send_success_marks_sent(client, monkeypatch):
     from prospector import gmailer
     sent_args = {}
 
-    def fake_send(to, subject, body):
+    def fake_send(to, subject, body, thread_id=None):
         sent_args.update(to=to, subject=subject, body=body)
         return {"message_id": "m1", "thread_id": "t1"}
 
@@ -487,3 +487,23 @@ def test_approval_endpoint(client):
     res = client.put(f"/api/prospects/{pid}/approval", json={"approved": False}).json()
     assert res["status"] == "needs-review"
     assert client.put("/api/prospects/9999/approval", json={"approved": True}).status_code == 404
+
+
+def test_followup_endpoints(client, monkeypatch):
+    from prospector import service
+    pid = db.insert_prospect(make_record("Acme"))
+    # nothing sent yet -> 400 from the service's ValueError
+    assert client.post(f"/api/prospects/{pid}/followup").status_code == 400
+    assert client.delete(f"/api/prospects/{pid}/followup").status_code == 400
+    assert client.post("/api/prospects/9999/followup").status_code == 404
+
+    monkeypatch.setattr(service, "draft_followup_for",
+                        lambda pid: {"subject": "Re: Hola", "body": "nudge", "followup": True})
+    r = client.post(f"/api/prospects/{pid}/followup")
+    assert r.status_code == 200 and r.json()["followup"] is True
+
+    db.set_prospect_email(pid, "Hola", "b")
+    db.mark_sent(pid, "m", "t", subject="Hola", body="b")
+    db.set_followup_draft(pid, "Re: Hola", "nudge")
+    assert client.delete(f"/api/prospects/{pid}/followup").json() == {"id": pid, "followup": False}
+    assert db.get_prospect(pid)["email"]["followup"] is False

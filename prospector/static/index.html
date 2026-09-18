@@ -355,6 +355,11 @@
   .otable td.co .line { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .otable .to, .otable .when { font-family: var(--mono); font-size: 11.5px; color: var(--muted); white-space: nowrap; }
   .otable .fixes { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: 6px; }
+  .otable .fu-tag { font-size: 11px; font-weight: 600; color: var(--accent-ink); margin-left: 6px;
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-radius: 999px; padding: 1px 7px; }
+  .fu-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .fu-bar .note { font-size: 12.5px; color: var(--muted); }
+  .fu-bar + .send-hist { margin-top: 0; }
   .otable .rep { color: var(--tier-a); font-weight: 600; font-size: 12px; white-space: nowrap; }
   .otable .wait { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .otable td.empty { color: var(--muted); font-size: 12px; cursor: default; }
@@ -874,7 +879,7 @@ function drawTodo(rows){
     const tr = el("tr");
     tr.innerHTML = `
       <td class="pick"></td>
-      <td class="co">${esc(r.company)}<span class="line">${esc(r.subject || "")}</span></td>
+      <td class="co">${esc(r.company)}${r.followup ? `<span class="fu-tag" title="A follow-up to the emails already sent, going out in the same thread">follow-up</span>` : ""}<span class="line">${esc(r.subject || "")}</span></td>
       <td><span class="to">${esc(r.contact_email || "—")}</span></td>
       <td><span class="qstat ${esc(r.status)}">${esc(QUEUE_LABEL[r.status] || r.status)}</span>${
         r.approved ? `<span class="fixes" title="Approved by hand despite the review">✓ approved</span>`
@@ -1374,10 +1379,11 @@ async function openDrawer(id, opts = {}){
     body.appendChild(sec("Research failed", `<div class="errbox">${esc(r.error)}</div>`));
   } else if (sentOnly){
     const h = el("div", "sec");
-    h.appendChild(sendHistory(r.sends || []));
+    h.append(followupBar(id, r), sendHistory(r.sends || []));
     body.appendChild(h);
   } else if (emailOnly){
-    body.appendChild(emailSection(id, r.email, !!r.queued_at, r.next_language, !!r.approved_at));
+    body.appendChild(emailSection(id, r.email, !!r.queued_at, r.next_language, !!r.approved_at,
+                                  r.sends || []));
   } else {
     if (r.outreach_angle) body.appendChild(sec("Outreach angle", `<div class="angle">${esc(r.outreach_angle)}</div>`));
     if (r.pain_points?.length){
@@ -1399,12 +1405,60 @@ async function openDrawer(id, opts = {}){
   $("#scrim").classList.add("show"); $("#drawer").classList.add("show");
   document.body.classList.add("drawer-open");
 }
+// "Draft follow-up" for a company already emailed: writes a short follow-up,
+// which moves the company back to To do (sent later as a reply in the same
+// thread), then shows it in the email drawer. Not offered once they've replied.
+function followupBar(id, r){
+  const bar = el("div", "fu-bar");
+  if (r.replied_at){
+    bar.appendChild(el("span", "note", "They replied — answer them in Gmail."));
+    return bar;
+  }
+  if (r.email && r.email.followup){       // opened from Sent while one is pending
+    bar.appendChild(el("span", "note", "A follow-up is already drafted — it's in To do."));
+    return bar;
+  }
+  const btn = el("button", "icon-btn primary", "✎ Draft follow-up");
+  btn.title = "Write a short follow-up to send as a reply in this thread (nothing is sent yet)";
+  btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = "Drafting…";
+    try {
+      const res = await fetch(`/api/prospects/${id}/followup`, {method: "POST"});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      toast("Follow-up drafted — it's in To do.");
+      refreshAfterDrawerChange();
+      openDrawer(id, {emailOnly: true});
+    } catch (e){
+      toast("Couldn't draft a follow-up: " + e.message);
+      btn.disabled = false; btn.textContent = "✎ Draft follow-up";
+    }
+  };
+  bar.appendChild(btn);
+  return bar;
+}
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
 
-function emailSection(id, existing, queued, language, approved){
+function emailSection(id, existing, queued, language, approved, sends){
   const s = el("div", "sec email");
+  const followup = !!(existing && existing.followup);
   // "Remove" takes an unsent company off Active contacts (unmarks it "to
   // contact"; its draft is kept). Emailed companies stay listed, so no button.
+  // A pending follow-up has "Discard follow-up" instead: the company goes back
+  // to Sent and its draft reverts to the last email sent.
+  const discard = el("button", "icon-btn", "✕ Discard follow-up");
+  discard.title = "Drop this follow-up (nothing is sent; the company goes back to Sent)";
+  discard.onclick = async () => {
+    discard.disabled = true;
+    try {
+      await flushEmailSave?.();                // land pending edits before reverting
+      const res = await fetch(`/api/prospects/${id}/followup`, {method: "DELETE"});
+      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+      flushEmailSave = null;                   // don't autosave over the reverted draft
+      closeDrawer();
+      toast("Follow-up discarded.");
+      refreshAfterDrawerChange();
+    } catch (e){ toast("Couldn't discard: " + e.message); discard.disabled = false; }
+  };
   const remove = el("button", "icon-btn", "✕ Remove");
   remove.title = "Take this company off Active contacts (the draft is kept; re-mark it with ☆ in Research)";
   remove.onclick = async () => {
@@ -1473,10 +1527,13 @@ function emailSection(id, existing, queued, language, approved){
     bar.appendChild(tools);
     if (unsent) bar.appendChild(seg);
     if (unsent && existing) bar.appendChild(status);
-    if (unsent && queued) bar.appendChild(remove);
+    if (followup) bar.appendChild(discard);
+    else if (unsent && queued) bar.appendChild(remove);
     s.append(bar);
   }
   s.append(out);
+  // A follow-up goes below the earlier emails in their thread: show them, closed.
+  if (followup) s.append(sendHistory(sends, false));
   return s;
 }
 
@@ -1493,6 +1550,7 @@ function renderEmail(id, out, email, tools){
   wrap.appendChild(status);
   function drawStatus(){
     const bits = [];
+    if (email.followup) bits.push("Follow-up");
     if (email.generated_at) bits.push("Saved draft · " + email.generated_at.slice(0, 10));
     if (email.language) bits.push(email.language.charAt(0).toUpperCase() + email.language.slice(1));
     status.innerHTML = esc(bits.join(" · "));
@@ -1511,6 +1569,10 @@ function renderEmail(id, out, email, tools){
   const subjInput = el("input", "subjtext");
   subjInput.type = "text"; subjInput.value = email.subject || "";
   subjInput.placeholder = "Subject line…";
+  if (email.followup){                           // it must match the thread's to stay in it
+    subjInput.readOnly = true;
+    subjInput.title = "A follow-up keeps the thread's subject";
+  }
   // New subject only: written against the body as it is in the editor now.
   const redo = el("button", "icon-btn", "↻ New subject");
   redo.title = "Write a new subject for this email (the body stays as it is)";
@@ -1557,7 +1619,7 @@ function renderEmail(id, out, email, tools){
   subjInput.oninput = () => { saveNote.textContent = ""; queueSave(); };
   ta.oninput = () => { fitBody(); saveNote.textContent = ""; queueSave(); };
   subjInput.onblur = ta.onblur = () => { if (saveT) saveEdits(); };
-  flushEmailSave = () => { if (saveT) saveEdits(); };
+  flushEmailSave = () => saveT ? saveEdits() : null;   // the save, when one was pending
 
   // New body only: written for the subject in the editor, reviewed like a full
   // draft, and stored with that subject — then the email is redrawn with it.
@@ -1591,7 +1653,7 @@ function renderEmail(id, out, email, tools){
 
   // Toolbar: New contact info · New subject · New body (see emailSection).
   const contactSlot = el("span", "email-tools");
-  tools.replaceChildren(contactSlot, redo, newBody);
+  tools.replaceChildren(contactSlot, ...(email.followup ? [] : [redo]), newBody);
 
   drawStatus();
   drawContact();
@@ -1603,8 +1665,9 @@ function renderEmail(id, out, email, tools){
 }
 
 // Every email sent to a company, newest first (kept forever, so resends don't
-// erase the trail). Each one expands to its subject + body; the newest starts open.
-function sendHistory(sends){
+// erase the trail). Each one expands to its subject + body; the newest starts
+// open unless openFirst is false.
+function sendHistory(sends, openFirst = true){
   const h = el("div", "send-hist");
   if (!sends.length){ h.appendChild(el("div", "hh", "Nothing sent yet")); return h; }
   h.appendChild(el("div", "hh", sends.length === 1 ? "Sent once"
@@ -1612,12 +1675,13 @@ function sendHistory(sends){
   sends.forEach((sd, i) => {
     const item = el("div", "sh");
     const head = el("div", "sh-head");
-    head.appendChild(el("span", "caret", i ? "▸" : "▾"));
+    const open = openFirst && i === 0;
+    head.appendChild(el("span", "caret", open ? "▾" : "▸"));
     head.appendChild(el("span", "date", (sd.sent_at || "").slice(0, 10)));
     if (sd.contact_email) head.appendChild(el("span", "to", esc(sd.contact_email)));
     head.appendChild(el("span", sd.replied_at ? "rep" : "wait",
       sd.replied_at ? "↩ replied " + sd.replied_at.slice(0, 10) : "awaiting reply"));
-    const bodyEl = el("div", "sh-body"); bodyEl.hidden = i > 0;
+    const bodyEl = el("div", "sh-body"); bodyEl.hidden = !open;
     bodyEl.appendChild(el("div", "subj", esc(sd.subject || "(no subject)")));
     bodyEl.appendChild(el("div", "snap", esc(sd.body || "")));
     head.onclick = () => {

@@ -22,6 +22,7 @@ from .agent import (
     discover_candidates,
     draft_email_body,
     draft_email_subject,
+    draft_followup_email,
     draft_outreach_email,
     find_contact,
     review_outreach_email,
@@ -226,7 +227,8 @@ def draft_email_for(prospect_id: int, language: str | None = None,
     the playbook checks + Claude review over it (see _review_draft), stores the
     reviewed text, then looks up where to send it (the contact search only runs
     once — a stored contact is reused across regenerations). `language` is
-    'english' or 'spanish'; None uses next_draft_language.
+    'english' or 'spanish'; None uses next_draft_language. A prospect with a
+    follow-up pending gets a new follow-up instead (draft_followup_for).
     Raises LookupError if the prospect is gone, ValueError if it's a
     failed-research row.
     """
@@ -236,12 +238,59 @@ def draft_email_for(prospect_id: int, language: str | None = None,
     if rec.get("error"):
         raise ValueError("This entry is a failed research record — there's nothing "
                          "to write an email from.")
+    if _followup_sends(rec):                       # "Draft selected" on a follow-up
+        return draft_followup_for(prospect_id, language, client)
     language = language or next_draft_language(rec)
     client = client or make_client()
     draft = draft_outreach_email(client, rec, ICP, language)
     email = _store_reviewed(prospect_id, rec, draft, language, client)
     email["contact"] = _resolve_contact(prospect_id, rec, client)
     return email
+
+
+def _followup_sends(rec: dict) -> list[dict] | None:
+    """The emails already sent, when the prospect's current draft is a pending
+    follow-up (drafting and review need them); None for a first email."""
+    return rec.get("sends") if (rec.get("email") or {}).get("followup") else None
+
+
+def draft_followup_for(prospect_id: int, language: str | None = None,
+                       client: anthropic.Anthropic | None = None) -> dict:
+    """Draft, review, and store a follow-up to the emails already sent to a
+    prospect. Returns the same shape as draft_email_for.
+
+    The follow-up becomes the prospect's current draft, marked pending
+    (db.set_followup_draft), so it shows in To do until it's sent — as a reply
+    in the same Gmail thread — or discarded. Redrafting a pending follow-up
+    passes the current one so the new take differs. Raises LookupError if the
+    prospect is gone, ValueError if nothing was sent yet or they already replied.
+    """
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    sends = rec.get("sends") or []
+    if not sends:
+        raise ValueError("Nothing sent yet — send the first email before a follow-up.")
+    if rec.get("replied_at"):
+        raise ValueError("They already replied — answer them in Gmail instead.")
+    language = language or next_draft_language(rec)
+    current = (rec["email"] or {}).get("body", "") if _followup_sends(rec) else ""
+    client = client or make_client()
+    draft = draft_followup_email(client, rec, sends, ICP, language, current)
+    final, review = _review_draft(client, rec, draft, language, sends)
+    db.set_followup_draft(prospect_id, final["subject"], final["body"], language)
+    db.set_email_review(prospect_id, review)
+    return {**final, "language": language, "review": review, "followup": True,
+            "contact": (rec.get("email") or {}).get("contact")}
+
+
+def discard_followup_for(prospect_id: int) -> None:
+    """Drop a prospect's pending follow-up draft (it goes back to Sent).
+    Raises LookupError if the prospect is gone, ValueError if none is pending."""
+    if db.get_prospect(prospect_id) is None:
+        raise LookupError("prospect not found")
+    if not db.discard_followup(prospect_id):
+        raise ValueError("No follow-up pending for this company.")
 
 
 def save_email_edits(prospect_id: int, subject: str, body: str) -> dict:
@@ -259,7 +308,8 @@ def save_email_edits(prospect_id: int, subject: str, body: str) -> dict:
     if not email:
         raise ValueError("No drafted email yet — draft one first.")
     db.set_email_text(prospect_id, subject, body)
-    remaining = lint_email(subject, body, email.get("language") or get_output_language())
+    remaining = lint_email(subject, body, email.get("language") or get_output_language(),
+                           followup=bool(email.get("followup")))
     review = email.get("review")
     if review:
         db.set_email_review(prospect_id, {**review, "remaining": remaining})
@@ -283,6 +333,8 @@ def redraft_subject_for(prospect_id: int, body: str | None = None,
     email = rec.get("email")
     if not email or not (body or email.get("body")):
         raise ValueError("No drafted email yet — draft one first.")
+    if email.get("followup"):
+        raise ValueError("A follow-up keeps the thread's subject (“Re: …”).")
     body = body if body is not None else email.get("body", "")
     current = subject if subject is not None else email.get("subject", "")
     language = email.get("language") or get_output_language()
@@ -318,9 +370,15 @@ def redraft_body_for(prospect_id: int, subject: str | None = None,
     current = body if body is not None else email.get("body", "")
     language = email.get("language") or get_output_language()
     client = client or make_client()
-    new = draft_email_body(client, rec, subject, ICP, language, current)
-    final, review = _review_draft(client, rec, {"subject": subject, "body": new}, language)
-    review["remaining"] = lint_email(subject, final["body"], language)
+    sends = _followup_sends(rec)
+    if sends:
+        new = draft_followup_email(client, rec, sends, ICP, language, current)["body"]
+    else:
+        new = draft_email_body(client, rec, subject, ICP, language, current)
+    final, review = _review_draft(client, rec, {"subject": subject, "body": new},
+                                  language, sends)
+    review["remaining"] = lint_email(subject, final["body"], language,
+                                     followup=bool(sends))
     db.set_email_text(prospect_id, subject, final["body"])
     db.set_email_review(prospect_id, review)
     db.set_draft_approved(prospect_id, False)   # a new body needs a fresh look
@@ -346,21 +404,27 @@ def review_email_for(prospect_id: int,
         "subject": email.get("subject", ""), "body": email.get("body", "")}
     language = email.get("language") or get_output_language()
     return _store_reviewed(prospect_id, rec, original, language,
-                           client or make_client())
+                           client or make_client(), _followup_sends(rec))
 
 
 def _store_reviewed(prospect_id: int, rec: dict, draft: dict, language: str,
-                    client: anthropic.Anthropic) -> dict:
-    """Review a draft and persist the result (final text + review record)."""
-    final, review = _review_draft(client, rec, draft, language)
+                    client: anthropic.Anthropic,
+                    sends: list[dict] | None = None) -> dict:
+    """Review a draft and persist the result (final text + review record).
+    `sends` marks it as a follow-up (see _review_draft); a pending follow-up
+    stays pending, since set_prospect_email leaves followup_at alone."""
+    final, review = _review_draft(client, rec, draft, language, sends)
     db.set_prospect_email(prospect_id, final["subject"], final["body"], language)
     db.set_email_review(prospect_id, review)
     return {**final, "language": language, "review": review}
 
 
 def _review_draft(client: anthropic.Anthropic, rec: dict, draft: dict,
-                  language: str) -> tuple[dict, dict]:
+                  language: str, sends: list[dict] | None = None) -> tuple[dict, dict]:
     """Run the playbook checks and the Claude review over one draft.
+
+    `sends` (the emails already sent) marks the draft as a follow-up: it's
+    checked with the follow-up rules and reviewed against the follow-up brief.
 
     Returns (final {'subject','body'}, review record). The record keeps the
     drafter's original text, the deterministic findings before (`lint`) and after
@@ -369,7 +433,8 @@ def _review_draft(client: anthropic.Anthropic, rec: dict, draft: dict,
     as needing attention and the auto-draft job retries just the review.
     """
     original = {"subject": draft.get("subject", ""), "body": draft.get("body", "")}
-    lint = lint_email(original["subject"], original["body"], language)
+    followup = bool(sends)
+    lint = lint_email(original["subject"], original["body"], language, followup=followup)
     review = {
         "original": original, "lint": lint, "issues": [], "remaining": lint,
         "changed": False, "model": None, "error": None,
@@ -379,14 +444,15 @@ def _review_draft(client: anthropic.Anthropic, rec: dict, draft: dict,
         review["skipped"] = True
         return original, review
     try:
-        out = review_outreach_email(client, rec, original, ICP, language, lint)
+        out = review_outreach_email(client, rec, original, ICP, language, lint,
+                                    sends=sends)
     except Exception as e:  # keep the draft; mark it unreviewed
         review["error"] = friendly_api_error(e)
         return original, review
     final = {"subject": out["subject"], "body": out["body"]}
     review.update(
         issues=out["issues"], model=get_review_model(),
-        remaining=lint_email(final["subject"], final["body"], language),
+        remaining=lint_email(final["subject"], final["body"], language, followup=followup),
         changed=final != original,
     )
     return final, review
@@ -624,7 +690,8 @@ def send_outreach(prospect_id: int, subject: str | None = None,
 
     subject/body override the stored draft (the user's in-editor edits); when
     given they're persisted before sending so the stored copy matches what went
-    out. Uses the stored contact address. Returns {'id', 'sent_at', 'thread_id'}.
+    out. Uses the stored contact address. A pending follow-up goes out as a
+    reply in the thread of the earlier emails. Returns {'id', 'sent_at', 'thread_id'}.
     Raises LookupError if the prospect is gone, ValueError if there's no draft or
     no address, and gmailer.GmailNotConfigured if the account isn't connected.
     """
@@ -643,11 +710,15 @@ def send_outreach(prospect_id: int, subject: str | None = None,
     body = body if body is not None else email.get("body", "")
     if not body.strip():
         raise ValueError("The email body is empty — nothing to send.")
+    sends = _followup_sends(rec)
+    if sends and rec.get("replied_at"):
+        raise ValueError("They replied meanwhile — the follow-up wasn't sent.")
+    thread_id = sends[0].get("thread_id") if sends else None
     # Persist the edited text so the stored draft matches what we actually send.
     db.set_prospect_email(prospect_id, subject, body,
                           email.get("language") or get_output_language())
 
-    sent = gmailer.send_email(to, subject, body)
+    sent = gmailer.send_email(to, subject, body, thread_id=thread_id)
     db.mark_sent(prospect_id, sent["message_id"], sent["thread_id"],
                  subject=subject, body=body, contact_email=to)
     updated = db.get_prospect(prospect_id)

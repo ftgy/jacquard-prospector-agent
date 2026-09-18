@@ -69,3 +69,19 @@ def test_long_email_and_long_sentence_are_flagged():
 def test_subject_rules():
     assert "subject" in rules(lint_email("Automatizar la gestión de CVs", body()))
     assert "subject" in rules(lint_email("Agentes de IA para vuestro equipo", body()))
+
+
+def test_followup_skips_intro_ask_and_subject_rules():
+    followup = ("Buenas,\n\nOs escribí hace unos días sobre los CVs. Imagino que "
+                "sigue siendo una tarea que se come horas. Si queréis, lo vemos en 20 "
+                "minutos; si no es el momento, lo entiendo.\n\nUn saludo,\n"
+                f"{SENDER_NAME}\n{SIGNATURE_LINKS}")
+    assert lint_email("Re: Automatizar la IA de CVs", followup, followup=True) == []
+    assert {"self-intro", "ask-opener", "subject"} <= rules(
+        lint_email("Re: Automatizar la IA de CVs", followup))
+
+
+def test_followup_has_a_tighter_word_ceiling():
+    b = body(observation=" ".join(["palabra."] * 60))
+    assert "length" not in rules(lint_email(SUBJECT, b))
+    assert "length" in rules(lint_email(SUBJECT, b, followup=True))

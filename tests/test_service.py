@@ -251,7 +251,7 @@ def test_draft_email_for_stores_reviewed_text_and_original(monkeypatch):
     monkeypatch.setattr(service, "find_contact", lambda client, rec: None)
     seen = {}
 
-    def fake_review(client, rec, draft, icp, language, lint):
+    def fake_review(client, rec, draft, icp, language, lint, sends=None):
         seen["lint"] = lint
         return {"issues": [{"rule": "vosotros", "detail": "usted -> vosotros"}],
                 "subject": "s", "body": "vosotros b"}
@@ -296,7 +296,7 @@ def test_draft_email_for_keeps_draft_when_review_fails(monkeypatch):
     monkeypatch.setattr(service, "draft_outreach_email",
                         lambda *a: pytest.fail("should not redraft"))
     monkeypatch.setattr(service, "review_outreach_email",
-                        lambda client, rec, draft, icp, language, lint:
+                        lambda client, rec, draft, icp, language, lint, sends=None:
                         {"issues": [], "subject": draft["subject"], "body": draft["body"]})
     out = service.review_email_for(pid, client=FakeClient())
     assert out["review"]["error"] is None
@@ -445,7 +445,7 @@ def test_start_run_async_discover_files_under_category(monkeypatch):
 def test_send_outreach_persists_edits_and_marks_sent(monkeypatch):
     from prospector import gmailer
     monkeypatch.setattr(gmailer, "send_email",
-                        lambda to, subject, body: {"message_id": "m", "thread_id": "th"})
+                        lambda to, subject, body, thread_id=None: {"message_id": "m", "thread_id": "th"})
     pid = db.insert_prospect(make_record("Acme"))
     db.set_prospect_email(pid, "orig", "orig body", "spanish")
     db.set_prospect_contact(pid, "hola@acme.es")
@@ -672,7 +672,7 @@ def _fake_gmail(monkeypatch, fail_for=()):
     from prospector import gmailer
     sent = []
 
-    def send_email(to, subject, body):
+    def send_email(to, subject, body, thread_id=None):
         if subject in fail_for:
             raise RuntimeError("gmail down")
         sent.append(subject)
@@ -795,7 +795,7 @@ def test_redraft_body_keeps_subject_and_stores_reviewed_body(monkeypatch):
         seen.update(subject=subject, language=language, current=current)
         return "usted b"
 
-    def fake_review(client, rec, draft, icp, language, lint):
+    def fake_review(client, rec, draft, icp, language, lint, sends=None):
         seen["reviewed"] = draft
         # the reviewer also touches the subject: that change must not stick
         return {"issues": [{"rule": "vosotros", "detail": "usted -> vosotros"}],
@@ -843,3 +843,82 @@ def test_redraft_body_clears_approval(monkeypatch):
     monkeypatch.setattr(service, "email_review_enabled", lambda: False)
     service.redraft_body_for(pid, client=FakeClient())
     assert db.get_prospect(pid)["approved_at"] is None
+
+
+def _sent_prospect(thread="t1"):
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_email(pid, "¿Cuánto tarda un CV?", "first body", "spanish")
+    db.set_prospect_contact(pid, "hola@acme.es")
+    db.mark_sent(pid, "m1", thread, subject="¿Cuánto tarda un CV?", body="first body",
+                 contact_email="hola@acme.es")
+    return pid
+
+
+def test_draft_followup_for_stores_a_pending_followup_under_re_subject(monkeypatch):
+    pid = _sent_prospect()
+    seen = {}
+
+    def fake_followup(client, rec, sends, icp, language, current=""):
+        seen.update(sends=sends, current=current)
+        return {"subject": "Re: ¿Cuánto tarda un CV?", "body": "nudge " + str(len(current))}
+
+    def fake_review(client, rec, draft, icp, language, lint, sends=None):
+        seen["review_sends"] = sends
+        return {"issues": [], "subject": draft["subject"], "body": draft["body"]}
+
+    monkeypatch.setattr(service, "draft_followup_email", fake_followup)
+    monkeypatch.setattr(service, "review_outreach_email", fake_review)
+    out = service.draft_followup_for(pid, client=FakeClient())
+    assert out["followup"] and out["subject"] == "Re: ¿Cuánto tarda un CV?"
+    assert [s["body"] for s in seen["sends"]] == ["first body"] and seen["review_sends"]
+    email = db.get_prospect(pid)["email"]
+    assert email["followup"] and email["sent_at"] is None and email["body"] == "nudge 0"
+
+    # "Draft selected" on it redrafts the follow-up, passing the current one
+    service.draft_email_for(pid, client=FakeClient())
+    assert seen["current"] == "nudge 0"
+    assert db.get_prospect(pid)["email"]["followup"]
+    with pytest.raises(ValueError):                    # the subject is the thread's
+        service.redraft_subject_for(pid, client=FakeClient())
+
+
+def test_draft_followup_for_refuses_unsent_or_replied():
+    pid = db.insert_prospect(make_record("Acme"))
+    with pytest.raises(ValueError):
+        service.draft_followup_for(pid, client=FakeClient())
+    pid = _sent_prospect()
+    db.mark_replied(pid, "2026-09-18T10:00:00+00:00")
+    with pytest.raises(ValueError):
+        service.draft_followup_for(pid, client=FakeClient())
+
+
+def test_send_outreach_sends_a_followup_in_the_thread(monkeypatch):
+    from prospector import gmailer
+    calls = []
+    monkeypatch.setattr(gmailer, "send_email", lambda to, subject, body, thread_id=None:
+                        calls.append((subject, thread_id)) or {"message_id": "m2", "thread_id": "t1"})
+    pid = _sent_prospect()
+    db.set_followup_draft(pid, "Re: ¿Cuánto tarda un CV?", "nudge", "spanish")
+    service.send_outreach(pid)
+    assert calls == [("Re: ¿Cuánto tarda un CV?", "t1")]
+    rec = db.get_prospect(pid)
+    assert not rec["email"]["followup"] and len(rec["sends"]) == 2
+
+
+def test_send_outreach_holds_a_followup_after_a_reply(monkeypatch):
+    from prospector import gmailer
+    monkeypatch.setattr(gmailer, "send_email", lambda *a, **k: pytest.fail("must not send"))
+    pid = _sent_prospect()
+    db.set_followup_draft(pid, "Re: x", "nudge")
+    db.mark_replied(pid, "2026-09-18T10:00:00+00:00")
+    with pytest.raises(ValueError):
+        service.send_outreach(pid)
+
+
+def test_discard_followup_for():
+    pid = _sent_prospect()
+    with pytest.raises(ValueError):
+        service.discard_followup_for(pid)
+    db.set_followup_draft(pid, "Re: x", "nudge")
+    service.discard_followup_for(pid)
+    assert db.get_prospect(pid)["email"]["body"] == "first body"

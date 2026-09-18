@@ -106,3 +106,10 @@ def test_deepseek_proxy_error_raised_without_personal_key(monkeypatch):
     _fake_deepseek(monkeypatch, proxy_fails=True, personal_key=None)
     with pytest.raises(agent.openai.APIConnectionError):
         agent._structure_deepseek("sys", "ask", {})
+
+
+def test_followup_subject_threads_on_the_first_subject():
+    from prospector.agent import followup_subject
+    sends = [{"subject": "Re: Hola"}, {"subject": "Hola"}]      # newest first
+    assert followup_subject(sends) == "Re: Hola"
+    assert followup_subject([{"subject": "RE: re: Hola"}]) == "Re: Hola"

@@ -190,6 +190,37 @@ def api_draft_email(prospect_id: int, req: EmailRequest | None = None):
         raise HTTPException(502, friendly_api_error(e))
 
 
+@app.post("/api/prospects/{prospect_id}/followup")
+def api_draft_followup(prospect_id: int):
+    """Draft a follow-up to the emails already sent to a prospect. Synchronous.
+    It's stored as the prospect's pending draft (back in To do) and goes out as a
+    reply in the same Gmail thread when sent."""
+    from .service import draft_followup_for, friendly_api_error
+    try:
+        return draft_followup_for(prospect_id)
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except SystemExit as e:  # make_client() with no API key
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, friendly_api_error(e))
+
+
+@app.delete("/api/prospects/{prospect_id}/followup")
+def api_discard_followup(prospect_id: int):
+    """Drop a pending follow-up draft; the prospect goes back to Sent."""
+    from .service import discard_followup_for
+    try:
+        discard_followup_for(prospect_id)
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"id": prospect_id, "followup": False}
+
+
 @app.put("/api/prospects/{prospect_id}/email")
 def api_save_email(prospect_id: int, req: EmailEditRequest):
     """Save hand edits to the drafted email (the drawer autosaves as you type).

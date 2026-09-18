@@ -36,6 +36,7 @@ class FakeGmail:
 
     def send(self, userId, body):
         self.sent_raw = body["raw"]
+        self.sent_thread = body.get("threadId")
         return _Call({"id": "m1", "threadId": "t1"})
 
     def get(self, userId, id, format, metadataHeaders): return _Call(self.thread)
@@ -71,6 +72,23 @@ def test_send_rejects_unverified_alias(fake, monkeypatch):
     with pytest.raises(gmailer.GmailNotConfigured):
         gmailer.send_email("a@b.es", "Hola", "Cuerpo")
     assert fake.sent_raw is None
+
+
+def test_send_in_thread_replies_to_its_last_message(fake, monkeypatch):
+    monkeypatch.delenv("GMAIL_SEND_AS", raising=False)
+    fake.thread = {"messages": [
+        {"payload": {"headers": [{"name": "Message-ID", "value": "<first@mail>"}]}},
+        {"payload": {"headers": [{"name": "Message-Id", "value": "<second@mail>"}]}}]}
+    gmailer.send_email("a@b.es", "Re: Hola", "Cuerpo", thread_id="t1")
+    headers = _sent_headers(fake)
+    assert fake.sent_thread == "t1"
+    assert headers["In-Reply-To"] == "<second@mail>" == headers["References"]
+
+
+def test_send_without_thread_starts_a_new_one(fake, monkeypatch):
+    monkeypatch.delenv("GMAIL_SEND_AS", raising=False)
+    gmailer.send_email("a@b.es", "Hola", "Cuerpo")
+    assert fake.sent_thread is None and _sent_headers(fake)["In-Reply-To"] is None
 
 
 def _msg(sender, ms, labels=("SENT",)):

@@ -143,9 +143,15 @@ def my_addresses() -> set[str]:
     return mine
 
 
-def send_email(to: str, subject: str, body: str) -> dict:
+def send_email(to: str, subject: str, body: str,
+               thread_id: str | None = None) -> dict:
     """Send a plain-text email as the authorized account, or from its
     GMAIL_SEND_AS alias when one is configured.
+
+    With `thread_id` the email goes out as a reply in that thread (a follow-up):
+    Gmail files it there, and In-Reply-To/References point at the thread's last
+    message so the recipient's client threads it too. The subject must match
+    the thread's ("Re: …") for Gmail to accept the threadId.
 
     Returns {"message_id", "thread_id"} — the ids let us follow the thread
     later to detect a reply. Raises GmailNotConfigured if not connected;
@@ -169,15 +175,32 @@ def send_email(to: str, subject: str, body: str) -> dict:
                 "Gmail account. Add it in Gmail settings or fix .env.")
         msg["From"] = formataddr((ident.get("displayName") or "", alias))
     # Without an alias Gmail fills From from the authorized account.
+    if thread_id:
+        parent = _last_message_id(svc, thread_id)
+        if parent:
+            msg["In-Reply-To"] = parent
+            msg["References"] = parent
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-    sent = svc.users().messages().send(
-        userId="me", body={"raw": raw}
-    ).execute()
+    payload = {"raw": raw, **({"threadId": thread_id} if thread_id else {})}
+    sent = svc.users().messages().send(userId="me", body=payload).execute()
     return {
         "message_id": sent["id"],
         "thread_id": sent["threadId"],
     }
+
+
+def _last_message_id(svc, thread_id: str) -> str | None:
+    """The RFC 822 Message-ID header of a thread's newest message (what a reply's
+    In-Reply-To points at), or None if the thread has none we can read."""
+    thread = svc.users().threads().get(
+        userId="me", id=thread_id, format="metadata", metadataHeaders=["Message-ID"],
+    ).execute()
+    for m in reversed(thread.get("messages", [])):
+        for h in m.get("payload", {}).get("headers", []):
+            if h["name"].lower() == "message-id":
+                return h["value"]
+    return None
 
 
 def check_reply(thread_id: str, mine: set[str] | None = None) -> str | None:
