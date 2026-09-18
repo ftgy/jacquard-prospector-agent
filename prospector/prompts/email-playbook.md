@@ -3,7 +3,7 @@ or labels):
 
 1. **Who you are** — the fixed self-introduction, reproduced VERBATIM. This is the
    one beat that never changes between prospects, so its exact wording is given to
-   you in the instructions above ("Mi nombre es Francisco, soy ingeniero de
+   you in the instructions above ("Mi nombre es Francisco y soy ingeniero de
    software. Me dedico a automatizar…") — use it as-is: don't paraphrase, reorder,
    or add to it. It introduces a real person, a software engineer who automates
    repetitive processes with AI agents. No studio pitch, no headcount, no hype —
@@ -48,7 +48,7 @@ sentences, the felt question, and the self-intro):
 >
 > Buenas,
 >
-> Mi nombre es Francisco, soy ingeniero de software. Me dedico a automatizar
+> Mi nombre es Francisco y soy ingeniero de software. Me dedico a automatizar
 > procesos con agentes de IA, sobre todo tareas repetitivas que hoy consumen horas
 > de gente cualificada.
 >

@@ -634,7 +634,7 @@ SIGNATURE_LINKS = f"{WEBSITE} · {LINKEDIN}"
 # greeting, then writes the personalized beats. Keyed by output language.
 SELF_INTRO = {
     "spanish": (
-        "Mi nombre es Francisco, soy ingeniero de software. Me dedico a "
+        "Mi nombre es Francisco y soy ingeniero de software. Me dedico a "
         "automatizar procesos con agentes de IA, sobre todo tareas repetitivas "
         "que hoy consumen horas de gente cualificada."
     ),
