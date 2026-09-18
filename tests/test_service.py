@@ -472,7 +472,7 @@ def test_send_outreach_missing_prospect():
 def test_refresh_replies_records_found(monkeypatch):
     from prospector import gmailer
     monkeypatch.setattr(gmailer, "ensure_authorized", lambda: None)
-    monkeypatch.setattr(gmailer, "account_email", lambda: "me@feina.dev")
+    monkeypatch.setattr(gmailer, "my_addresses", lambda: {"me@feina.dev"})
     # first thread replied, second not
     replies = {"ta": "1757230800000", "tb": None}
     monkeypatch.setattr(gmailer, "check_reply", lambda tid, me=None: replies[tid])
@@ -489,7 +489,7 @@ def test_refresh_replies_records_found(monkeypatch):
 def test_refresh_replies_swallows_per_thread_errors(monkeypatch):
     from prospector import gmailer
     monkeypatch.setattr(gmailer, "ensure_authorized", lambda: None)
-    monkeypatch.setattr(gmailer, "account_email", lambda: "me@feina.dev")
+    monkeypatch.setattr(gmailer, "my_addresses", lambda: {"me@feina.dev"})
 
     def boom(tid, me=None):
         raise RuntimeError("thread fetch failed")

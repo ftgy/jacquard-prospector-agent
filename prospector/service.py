@@ -578,7 +578,7 @@ def refresh_replies() -> dict:
     """
     gmailer.ensure_authorized()       # fail clearly rather than silently no-op
     worklist = db.sent_awaiting_reply()
-    me = gmailer.account_email()      # resolve once; reused for every thread
+    me = gmailer.my_addresses()       # resolve once; reused for every thread
     new_replies = 0
     for item in worklist:
         try:

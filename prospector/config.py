@@ -89,6 +89,14 @@ def get_email_provider() -> str:
     return p if p in ("anthropic", "deepseek") else "anthropic"
 
 
+def get_send_as() -> str | None:
+    """The Gmail send-as alias outreach goes out from (e.g. hello@feina.dev), or
+    None to send as the authorized account itself. It must already be a verified
+    "Send mail as" address in that Gmail account. Set GMAIL_SEND_AS in .env.
+    """
+    return os.environ.get("GMAIL_SEND_AS", "").strip().lower() or None
+
+
 def get_review_model() -> str:
     """Claude model that reviews each drafted email against the playbook.
 

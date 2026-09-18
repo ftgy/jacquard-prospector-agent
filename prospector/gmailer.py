@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import base64
 from email.message import EmailMessage
-from email.utils import parseaddr
+from email.utils import formataddr, parseaddr
 from pathlib import Path
+
+from .config import get_send_as
 
 # Gmail secrets live together in a git-ignored secrets/ dir at the project root
 # (one level up from this package), kept out of the code and out of git.
@@ -120,8 +122,30 @@ def account_email() -> str | None:
         return None
 
 
+def _send_as_identities(svc) -> list[dict]:
+    """The account's "Send mail as" identities (primary address included)."""
+    return svc.users().settings().sendAs().list(userId="me").execute().get("sendAs", [])
+
+
+def sender_address() -> str | None:
+    """The address outreach goes out from: GMAIL_SEND_AS if set, else the
+    account's own address (None if not connected / unreachable)."""
+    return get_send_as() or account_email()
+
+
+def my_addresses() -> set[str]:
+    """Every address mail from us can carry — the account plus its send-as
+    aliases — so reply detection doesn't mistake our own sends for replies."""
+    svc = _service()
+    mine = {(s.get("sendAsEmail") or "").lower() for s in _send_as_identities(svc)}
+    mine.add((account_email() or "").lower())
+    mine.discard("")
+    return mine
+
+
 def send_email(to: str, subject: str, body: str) -> dict:
-    """Send a plain-text email as the authorized account.
+    """Send a plain-text email as the authorized account, or from its
+    GMAIL_SEND_AS alias when one is configured.
 
     Returns {"message_id", "thread_id"} — the ids let us follow the thread
     later to detect a reply. Raises GmailNotConfigured if not connected;
@@ -133,8 +157,18 @@ def send_email(to: str, subject: str, body: str) -> dict:
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
-    # Gmail fills In/From from the authorized account; setting From explicitly is
-    # optional, so we leave it off and let Gmail use the account's send identity.
+    alias = get_send_as()
+    if alias:
+        # Gmail only honours a From that is a verified send-as identity; use the
+        # display name configured there so it matches mail sent from the web UI.
+        ident = next((s for s in _send_as_identities(svc)
+                      if (s.get("sendAsEmail") or "").lower() == alias), None)
+        if ident is None:
+            raise GmailNotConfigured(
+                f"GMAIL_SEND_AS={alias} isn't a \"Send mail as\" address on this "
+                "Gmail account. Add it in Gmail settings or fix .env.")
+        msg["From"] = formataddr((ident.get("displayName") or "", alias))
+    # Without an alias Gmail fills From from the authorized account.
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     sent = svc.users().messages().send(
@@ -146,21 +180,20 @@ def send_email(to: str, subject: str, body: str) -> dict:
     }
 
 
-def check_reply(thread_id: str, my_email: str | None = None) -> str | None:
+def check_reply(thread_id: str, mine: set[str] | None = None) -> str | None:
     """Return the internal date (ISO-ish ms epoch as a string) of the first reply
     on a thread, or None if the only messages are ones we sent.
 
-    A "reply" is any message in the thread whose From address isn't ours. We
-    resolve our own address once (my_email) to compare against; if it can't be
-    determined we fall back to the SENT label, treating any message *without* it
-    as inbound.
+    A "reply" is any message in the thread whose From address isn't ours. `mine`
+    is our addresses (account + send-as aliases, see my_addresses), resolved once
+    by the caller; if empty we fall back to the SENT label, treating any message
+    *without* it as inbound.
     """
     from googleapiclient.errors import HttpError
 
     svc = _service()
-    if my_email is None:
-        my_email = account_email()
-    me = (my_email or "").strip().lower()
+    if mine is None:
+        mine = my_addresses()
 
     try:
         thread = svc.users().threads().get(
@@ -177,7 +210,7 @@ def check_reply(thread_id: str, my_email: str | None = None) -> str | None:
                    for h in m.get("payload", {}).get("headers", [])}
         sender = parseaddr(headers.get("from", ""))[1].strip().lower()
         label_ids = m.get("labelIds", [])
-        is_ours = (sender == me) if me else ("SENT" in label_ids)
+        is_ours = (sender in mine) if mine else ("SENT" in label_ids)
         if not is_ours:
             # internalDate is ms since epoch as a string; hand it back as-is so
             # the caller can store/format it however it likes.

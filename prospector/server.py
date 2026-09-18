@@ -217,7 +217,7 @@ def api_gmail_status():
     from . import gmailer
     if not gmailer.authorized():
         return {"connected": False, "email": None}
-    return {"connected": True, "email": gmailer.account_email()}
+    return {"connected": True, "email": gmailer.sender_address()}
 
 
 @app.get("/api/outreach")
