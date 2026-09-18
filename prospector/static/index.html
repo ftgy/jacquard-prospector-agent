@@ -750,7 +750,7 @@ async function loadActive(){
   host.innerHTML = "";
   $("#cnt-queue").textContent = q.filter(r => r.status !== "sent").length || "";
   if (!q.length){
-    host.appendChild(el("tr", null, "<td class='empty' colspan='5'>Nothing here yet — mark companies “to contact” from their detail panel.</td>"));
+    host.appendChild(el("tr", null, "<td class='empty' colspan='5'>Nothing here yet — mark companies “to contact” with the ☆ in the research tables.</td>"));
     return;
   }
   for (const r of q){
@@ -841,7 +841,7 @@ function renderBlocked(){
     li.appendChild(head);
     li.appendChild(el("ul", "bl-reasons", it.reasons.map(r =>
       `<li><b>${esc(r.rule)}</b> ${esc(r.detail.split("\n")[0])}</li>`).join("")));
-    li.onclick = () => openDrawer(it.id);
+    li.onclick = () => openDrawer(it.id, {emailOnly: true});
     host.appendChild(li);
   }
 }
@@ -1151,8 +1151,8 @@ function starButton(r){
 }
 
 // --- detail drawer ---
-// opts.emailOnly (from the Outreach pipeline): show just the email section —
-// no research, fit meter, notes or delete button.
+// The full drawer is research only; opts.emailOnly (from the Outreach tab)
+// shows just the email section instead — no research, fit meter or delete.
 async function openDrawer(id, opts = {}){
   const r = await fetch("/api/prospects/" + id).then(x=>x.json());
   openDrawer._id = id;
@@ -1190,15 +1190,13 @@ async function openDrawer(id, opts = {}){
     if (r.sources?.length)
       body.appendChild(sec(`Sources (${r.sources.length})`,
         `<div class="sources">${r.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`).join("")}</div>`));
-    body.appendChild(emailSection(id, r.email, r.sends || [], !!r.queued_at));
   }
-  if (!emailOnly) body.appendChild(notesSection(id, r.notes || ""));
   $("#scrim").classList.add("show"); $("#drawer").classList.add("show");
 }
 function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`); }
 
 function emailSection(id, existing, sends, queued){
-  const s = el("div", "sec email", `<h4>Outreach email</h4>`);
+  const s = el("div", "sec email");
   sends = sends || [];
   // "To contact" marks the prospect for the auto-draft job.
   const mark = el("button", "icon-btn");
