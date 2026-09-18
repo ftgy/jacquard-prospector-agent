@@ -264,11 +264,7 @@
 
   /* outreach email */
   .email-gen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .lang-seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
-  .lang-opt { background: var(--surface-2); border: 0; color: var(--ink-2); padding: 7px 12px; cursor: pointer;
-    font-size: 12px; font-family: var(--mono); }
-  .lang-opt + .lang-opt { border-left: 1px solid var(--hairline); }
-  .lang-opt.on { background: var(--accent); color: #fff; }
+  .email-none { color: var(--muted); font-size: 13px; }
   .email-out { margin-top: 12px; }
   .email-saved { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 8px; }
   .email-draft .email-subj { display: flex; gap: 10px; align-items: center; padding: 9px 12px;
@@ -306,8 +302,6 @@
     background: color-mix(in srgb, var(--accent) 16%, transparent); }
 
   /* "To contact" toggle + Claude review of the draft */
-  .icon-btn.queued { color: var(--accent-ink); border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
   .review { margin-bottom: 10px; border: 1px solid var(--hairline); border-radius: 9px;
     background: var(--surface-2); font-size: 12.5px; }
   .review.ok { border-color: color-mix(in srgb, var(--tier-a) 35%, var(--hairline)); }
@@ -1357,50 +1351,29 @@ function sec(title, html){ return el("div","sec",`<h4>${esc(title)}</h4>${html}`
 function emailSection(id, existing, sends, queued){
   const s = el("div", "sec email");
   sends = sends || [];
-  // "To contact" marks the prospect for the auto-draft job.
-  const mark = el("button", "icon-btn");
-  const drawMark = () => { mark.className = "icon-btn" + (queued ? " queued" : "");
-    mark.textContent = queued ? "★ To contact" : "☆ Mark to contact"; };
-  drawMark();
-  mark.onclick = async () => {
-    mark.disabled = true;
+  // "Remove" takes an unsent company off Active contacts (unmarks it "to
+  // contact"; its draft is kept). Emailed companies stay listed, so no button.
+  const remove = el("button", "icon-btn", "✕ Remove");
+  remove.title = "Take this company off Active contacts (the draft is kept; re-mark it with ☆ in Research)";
+  remove.onclick = async () => {
+    remove.disabled = true;
     try {
       const res = await fetch(`/api/prospects/${id}/queue`, {method:"PUT",
-        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ queued: !queued })});
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ queued: false })});
       if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
-      queued = !queued; drawMark();
-      toast(queued ? "Marked to contact — the next draft run picks it up." : "Removed from the queue.");
+      closeDrawer();
+      toast("Removed from Active contacts.");
       refreshAfterDrawerChange();
-    } catch (e){ toast("Couldn't update: " + e.message); }
-    finally { mark.disabled = false; }
+    } catch (e){ toast("Couldn't remove: " + e.message); remove.disabled = false; }
   };
-  let lang = (existing && existing.language) || "english";
-  const seg = el("div", "lang-seg");
-  const mkOpt = (val, label) => {
-    const b = el("button", "lang-opt" + (val === lang ? " on" : ""), label);
-    b.onclick = () => { lang = val; seg.querySelectorAll(".lang-opt").forEach(x => x.classList.toggle("on", x === b)); };
-    return b;
-  };
-  seg.append(mkOpt("english", "EN"), mkOpt("spanish", "ES"));
-
-  const gen = el("button", "icon-btn primary", existing ? "✉ Re-draft" : "✉ Draft");
+  // Drafting lives in Pipeline ("Draft all" / "Draft N selected"), not here.
   const out = el("div", "email-out");
   if (existing) renderEmail(id, out, existing, sends);
-  gen.onclick = async () => {
-    gen.disabled = true; const was = gen.textContent; gen.textContent = "✉ Drafting…";
-    try {
-      const res = await fetch(`/api/prospects/${id}/email`, {method:"POST",
-        headers:{"Content-Type":"application/json"}, body: JSON.stringify({ language: lang })});
-      if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
-      renderEmail(id, out, await res.json(), sends);
-      gen.textContent = "✉ Re-draft";
-      refreshAfterDrawerChange();
-    } catch (e){ toast("Couldn't draft email: " + e.message); gen.textContent = was; }
-    finally { gen.disabled = false; }
-  };
+  else out.appendChild(el("div", "email-none",
+    "No draft yet — tick this company in Pipeline and use “Draft selected”."));
   const genRow = el("div", "email-gen");
-  genRow.append(gen, seg, mark);
-  s.append(genRow, out);
+  if (queued && !(existing && existing.sent_at)){ genRow.append(remove); s.append(genRow); }
+  s.append(out);
   return s;
 }
 
