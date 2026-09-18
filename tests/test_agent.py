@@ -63,3 +63,46 @@ def test_suggest_niches_missing_key_returns_empty(monkeypatch):
     monkeypatch.setattr(agent, "_structure",
                         lambda *a, **k: {})  # model returned no 'niches'
     assert suggest_niches(object(), "Nowhere", "icp") == []
+
+
+def _fake_deepseek(monkeypatch, proxy_fails: bool, personal_key: str | None):
+    """Wire _structure_deepseek to fake clients; returns the models called, in order."""
+    calls = []
+    proxy, personal = object(), object()
+    monkeypatch.setattr(agent, "get_deepseek_proxy_model", lambda: "deepseek/deepseek-v4-pro")
+    monkeypatch.setattr(agent, "get_deepseek_model", lambda: "deepseek-chat")
+    monkeypatch.setattr(agent, "make_deepseek_proxy_client", lambda: proxy)
+    monkeypatch.setattr(agent, "make_deepseek_client", lambda: personal)
+    if personal_key:
+        monkeypatch.setenv("DEEPSEEK_API_KEY", personal_key)
+    else:
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    def fake_structure_openai(client, system, ask, schema, max_tokens=4000, model=""):
+        calls.append(model)
+        if client is proxy and proxy_fails:
+            raise agent.openai.APIConnectionError(request=None)
+        return {"subject": model}
+
+    monkeypatch.setattr(agent, "_structure_openai", fake_structure_openai)
+    return calls
+
+
+def test_deepseek_uses_proxy_first(monkeypatch):
+    calls = _fake_deepseek(monkeypatch, proxy_fails=False, personal_key="sk-x")
+    out = agent._structure_deepseek("sys", "ask", {})
+    assert out == {"subject": "deepseek/deepseek-v4-pro"}
+    assert calls == ["deepseek/deepseek-v4-pro"]
+
+
+def test_deepseek_falls_back_to_personal_key(monkeypatch):
+    calls = _fake_deepseek(monkeypatch, proxy_fails=True, personal_key="sk-x")
+    out = agent._structure_deepseek("sys", "ask", {})
+    assert out == {"subject": "deepseek-chat"}
+    assert calls == ["deepseek/deepseek-v4-pro", "deepseek-chat"]
+
+
+def test_deepseek_proxy_error_raised_without_personal_key(monkeypatch):
+    _fake_deepseek(monkeypatch, proxy_fails=True, personal_key=None)
+    with pytest.raises(agent.openai.APIConnectionError):
+        agent._structure_deepseek("sys", "ask", {})

@@ -116,8 +116,21 @@ def email_review_enabled() -> bool:
 
 
 def get_deepseek_model() -> str:
-    """DeepSeek model for the email stage. Override with DEEPSEEK_MODEL in .env."""
+    """DeepSeek model on the personal-key backup route. Override with DEEPSEEK_MODEL."""
     return os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+
+
+def get_deepseek_proxy_model() -> str | None:
+    """DeepSeek model to draft with through the LiteLLM proxy, or None to skip it.
+
+    With EMAIL_PROVIDER=deepseek the email stage tries this first and only falls
+    back to the personal DEEPSEEK_API_KEY if the proxy call fails. Override with
+    DEEPSEEK_PROXY_MODEL in .env; set it empty to always use the personal key.
+    Needs ANTHROPIC_BASE_URL (no proxy → personal key only).
+    """
+    if not get_base_url():
+        return None
+    return os.environ.get("DEEPSEEK_PROXY_MODEL", "deepseek/deepseek-v4-pro").strip() or None
 
 
 def get_deepseek_base_url() -> str:
@@ -206,11 +219,27 @@ def make_deepseek_client():
     return OpenAI(base_url=get_deepseek_base_url(), api_key=key)
 
 
+def make_deepseek_proxy_client():
+    """OpenAI-compatible client pointed at the LiteLLM proxy's /v1 chat endpoint.
+
+    Same virtual key as the Anthropic client; LiteLLM routes DeepSeek models to
+    their OpenAI-shape API, so _structure_openai works unchanged against it.
+    """
+    from openai import OpenAI
+
+    load_env()
+    return OpenAI(base_url=get_base_url().rstrip("/") + "/v1",
+                  api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+
 def describe_target() -> str:
     """One-line summary of where requests are going — printed on every run."""
     where = get_base_url() or "https://api.anthropic.com (direct)"
     if get_email_provider() == "deepseek":
-        email_note = f" (email: {get_deepseek_model()} via {get_deepseek_base_url()})"
+        backup = f"{get_deepseek_model()} via {get_deepseek_base_url()}"
+        proxy = get_deepseek_proxy_model()
+        email_note = (f" (email: {proxy} via proxy, backup {backup})" if proxy
+                      else f" (email: {backup})")
     else:
         email = get_email_model()
         email_note = "" if email == get_model() else f" (email: {email})"

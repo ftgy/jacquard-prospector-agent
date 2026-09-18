@@ -16,12 +16,16 @@ tool with structured output in one call is unreliable.
 """
 
 import json
+import logging
+import os
 import re
 
 import anthropic
+import openai
 
 from .config import (
     get_deepseek_model,
+    get_deepseek_proxy_model,
     get_email_model,
     get_email_provider,
     get_model,
@@ -29,11 +33,14 @@ from .config import (
     get_review_model,
     get_web_search_tool,
     make_deepseek_client,
+    make_deepseek_proxy_client,
     output_language_name,
     use_native_structured_output,
 )
 from .docs import load_prompt
 from .search import get_search_backend, grounded_search
+
+log = logging.getLogger(__name__)
 
 
 def _output_language_note() -> str:
@@ -194,6 +201,29 @@ def _structure_openai(client, system: str, ask: str, schema: dict,
                                             "ONLY the JSON object, no other text."},
             ]
     raise AssertionError("unreachable")
+
+
+def _structure_deepseek(system: str, ask: str, schema: dict,
+                        max_tokens: int = 4000) -> dict:
+    """One structured DeepSeek turn: via the LiteLLM proxy, personal key as backup.
+
+    The proxy model (config.get_deepseek_proxy_model) goes first so drafting runs
+    on the shared gateway; any API error there — proxy down, model benched, out
+    of budget — retries once on the personal DEEPSEEK_API_KEY. Without a personal
+    key the proxy error is raised as-is.
+    """
+    proxy_model = get_deepseek_proxy_model()
+    if proxy_model:
+        try:
+            return _structure_openai(make_deepseek_proxy_client(), system, ask,
+                                     schema, max_tokens=max_tokens, model=proxy_model)
+        except openai.APIError as e:
+            if not os.environ.get("DEEPSEEK_API_KEY"):
+                raise
+            log.warning("DeepSeek via proxy (%s) failed, using personal key: %s",
+                        proxy_model, e)
+    return _structure_openai(make_deepseek_client(), system, ask, schema,
+                             max_tokens=max_tokens, model=get_deepseek_model())
 
 
 # --- Stage 0: discovery ------------------------------------------------------
@@ -741,10 +771,7 @@ def draft_outreach_email(client: anthropic.Anthropic, record: dict, icp: str,
     ask = ("Write a cold outreach email to this company, grounded only in the facts "
            "below.\n\n=== PROSPECT ===\n" + _email_context(record))
     if get_email_provider() == "deepseek":
-        return _structure_openai(
-            make_deepseek_client(), system, ask, EMAIL_SCHEMA,
-            max_tokens=2000, model=get_deepseek_model(),
-        )
+        return _structure_deepseek(system, ask, EMAIL_SCHEMA, max_tokens=2000)
     return _structure(
         client, system, ask, EMAIL_SCHEMA,
         max_tokens=2000, model=get_email_model(),
@@ -777,10 +804,7 @@ def draft_email_subject(client: anthropic.Anthropic, record: dict, body: str,
     ask += ("\n\n=== PROSPECT ===\n" + _email_context(record)
             + "\n\n=== EMAIL BODY ===\n" + body)
     if get_email_provider() == "deepseek":
-        out = _structure_openai(
-            make_deepseek_client(), system, ask, SUBJECT_SCHEMA,
-            max_tokens=300, model=get_deepseek_model(),
-        )
+        out = _structure_deepseek(system, ask, SUBJECT_SCHEMA, max_tokens=300)
     else:
         out = _structure(client, system, ask, SUBJECT_SCHEMA,
                          max_tokens=300, model=get_email_model())
