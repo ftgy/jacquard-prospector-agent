@@ -568,7 +568,8 @@
   <!-- Tab 3: Outreach -->
   <section class="tabpane" id="pane-outreach">
     <div class="subtabs" id="o-subtabs">
-      <button class="chip" data-sub="pipeline">Pipeline <span class="tnum" id="cnt-queue"></span></button>
+      <button class="chip" data-sub="todo">To do <span class="tnum" id="cnt-queue"></span></button>
+      <button class="chip" data-sub="sent">Sent <span class="tnum" id="cnt-sent"></span></button>
       <button class="chip" data-sub="blocked">Blocked drafts <span class="tnum" id="cnt-blocked"></span></button>
       <button class="chip" data-sub="stats">Statistics</button>
     </div>
@@ -594,24 +595,35 @@
     <p class="pane-hint">Sends and replies are tracked through your connected Gmail account. Counts are by local day.</p>
     </div>
 
-    <div class="subpane" id="o-sub-pipeline">
+    <div class="subpane" id="o-sub-todo">
 
     <div class="panel">
       <div style="display:flex;align-items:baseline;gap:12px">
-        <h2>Active contacts</h2>
+        <h2>To do</h2>
         <span class="draft-prog" id="draftProgress"></span>
         <span style="flex:1"></span>
         <button class="icon-btn primary" id="draftNowBtn" title="Write and review emails for the ticked companies, or the whole queue if none are ticked (nothing is sent)">✎ Draft all</button>
         <span class="draft-prog" id="sendProgress"></span>
         <button class="icon-btn" id="sendAllBtn" title="Send the drafts of the ticked companies, or every draft that's ready to send if none are ticked (asks first)">➤ Send all</button>
       </div>
-      <div class="scroll"><table class="otable oqueue">
-        <thead><tr><th class="pick"><input type="checkbox" id="o-pick-all" title="Select all unsent"></th><th class="sortable" data-sort="company">Company</th><th class="sortable" data-sort="contact">Contact</th><th class="sortable" data-sort="draft">Draft</th><th class="sortable" data-sort="sent">Last sent</th><th class="sortable" data-sort="reply">Reply</th></tr></thead>
+      <div class="scroll"><table class="otable oqueue" data-list="todo">
+        <thead><tr><th class="pick"><input type="checkbox" id="o-pick-all" title="Select all"></th><th class="sortable" data-sort="company">Company</th><th class="sortable" data-sort="contact">Contact</th><th class="sortable" data-sort="draft">Draft</th></tr></thead>
         <tbody id="o-active"></tbody>
       </table></div>
     </div>
 
-    <p class="pane-hint">Active contacts are companies marked “to contact” plus everyone already emailed. <code>scripts/draft_queued.py</code> drafts and reviews emails for the unsent ones.</p>
+    <p class="pane-hint">Companies marked “to contact” that haven't been emailed yet. <code>scripts/draft_queued.py</code> drafts and reviews their emails.</p>
+    </div>
+
+    <div class="subpane" id="o-sub-sent">
+    <div class="panel">
+      <h2>Sent</h2>
+      <div class="scroll"><table class="otable oqueue" data-list="sent">
+        <thead><tr><th class="sortable" data-sort="company">Company</th><th class="sortable" data-sort="contact">Contact</th><th class="sortable" data-sort="sent">Last sent</th><th class="sortable" data-sort="reply">Reply</th></tr></thead>
+        <tbody id="o-sent"></tbody>
+      </table></div>
+    </div>
+    <p class="pane-hint">Everyone already emailed, most recent send first. Open a company to see its full send history.</p>
     </div>
 
     <div class="subpane" id="o-sub-blocked">
@@ -620,7 +632,7 @@
       <div class="oblocked"><div class="rchips" id="o-blocked-rules"></div>
       <ul class="orecent" id="o-blocked"></ul></div>
     </div>
-    <p class="pane-hint">Unsent drafts that failed the review or still break a playbook rule. Tick them in Pipeline and “Draft selected” to redo them.</p>
+    <p class="pane-hint">Unsent drafts that failed the review or still break a playbook rule. Tick them in To do and “Draft selected” to redo them.</p>
     </div>
   </section>
 </div>
@@ -691,7 +703,7 @@ function switchTab(tab){
     document.querySelectorAll("#pane-research .subpane").forEach(p => p.classList.toggle("on", p.id === "view-" + tab));
   }
   $("#filters").style.display = isResultsView(tab) ? "" : "none";
-  location.hash = tab === "outreach" ? (state.osub !== "pipeline" ? "outreach/" + state.osub : "outreach")
+  location.hash = tab === "outreach" ? (state.osub !== "todo" ? "outreach/" + state.osub : "outreach")
                 : tab === "niche" ? "research"
                 : tab === "companies" ? "research/companies"
                 : tab === "rstats" ? "research/stats" : tab;
@@ -724,14 +736,15 @@ async function loadStats(){
 }
 
 // --- outreach ---
-// Subtabs: "pipeline" (active contacts; the default), "blocked" (drafts that
-// failed review) and "stats" (counters + chart).
+// Subtabs: "todo" (unsent companies marked to contact; the default), "sent"
+// (everyone already emailed), "blocked" (drafts that failed review) and "stats"
+// (counters + chart).
 document.querySelectorAll("#o-subtabs button").forEach(b => b.onclick = () => switchSub(b.dataset.sub));
 function switchSub(sub){
   state.osub = sub;
   document.querySelectorAll("#o-subtabs button").forEach(b => b.classList.toggle("on", b.dataset.sub === sub));
   document.querySelectorAll("#pane-outreach .subpane").forEach(p => p.classList.toggle("on", p.id === "o-sub-" + sub));
-  if (state.tab === "outreach") location.hash = sub === "pipeline" ? "outreach" : "outreach/" + sub;
+  if (state.tab === "outreach") location.hash = sub === "todo" ? "outreach" : "outreach/" + sub;
 }
 
 async function loadOutreach(){
@@ -796,27 +809,29 @@ $("#o-pick-all").onclick = e => {
   drawPicks();
 };
 
-// Column sort for Active contacts. No sort = the server's order. Clicking a
-// header sorts by it (Last sent starts newest-first); clicking it again flips it. Blank values
-// (no contact, never sent, no reply yet) always go last.
-const QUEUE_ORDER = ["ready", "needs-review", "no-contact", "waiting", "sent"];
+// Column sort for the To do and Sent tables, kept per table. No sort = the
+// server's order (To do: oldest mark first; Sent: most recent send first).
+// Clicking a header sorts by it (Last sent starts newest-first); clicking it
+// again flips it. Blank values (no contact, no reply yet) always go last.
+const QUEUE_ORDER = ["ready", "needs-review", "no-contact", "waiting"];
 const ACTIVE_SORT_KEYS = {
   company: r => (r.company || "").toLowerCase() || null,
   contact: r => (r.contact_email || "").toLowerCase() || null,
   draft:   r => { const i = QUEUE_ORDER.indexOf(r.status); return i < 0 ? QUEUE_ORDER.length : i; },
   sent:    r => r.sent_at || null,
-  reply:   r => r.replied_at ? 0 : r.sent_at ? 1 : null,
+  reply:   r => r.replied_at ? 0 : 1,
 };
-let activeRows = [], activeSort = { key: null, dir: 1 };
+let activeRows = [];
+const listSort = { todo: { key: null, dir: 1 }, sent: { key: null, dir: 1 } };
 document.querySelectorAll(".oqueue th.sortable").forEach(th => th.onclick = () => {
-  const key = th.dataset.sort;
-  activeSort = { key, dir: activeSort.key === key ? -activeSort.dir : key === "sent" ? -1 : 1 };
+  const list = th.closest("table").dataset.list, cur = listSort[list], key = th.dataset.sort;
+  listSort[list] = { key, dir: cur.key === key ? -cur.dir : key === "sent" ? -1 : 1 };
   drawActive();
 });
-function sortedActive(){
-  const { key, dir } = activeSort, get = ACTIVE_SORT_KEYS[key];
-  if (!get) return activeRows;
-  return [...activeRows].sort((a, b) => {
+function sortedRows(rows, { key, dir }){
+  const get = ACTIVE_SORT_KEYS[key];
+  if (!get) return rows;
+  return [...rows].sort((a, b) => {
     const x = get(a), y = get(b);
     if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
     return (x < y ? -1 : x > y ? 1 : 0) * dir;
@@ -830,45 +845,66 @@ async function loadActive(){
 }
 
 function drawActive(){
-  const host = $("#o-active"), q = activeRows;
   document.querySelectorAll(".oqueue th.sortable").forEach(th => {
-    const on = th.dataset.sort === activeSort.key;
+    const srt = listSort[th.closest("table").dataset.list], on = th.dataset.sort === srt.key;
     th.classList.toggle("sorted", on);
-    th.classList.toggle("asc", on && activeSort.dir === 1);
-    th.classList.toggle("desc", on && activeSort.dir === -1);
+    th.classList.toggle("asc", on && srt.dir === 1);
+    th.classList.toggle("desc", on && srt.dir === -1);
   });
-  host.innerHTML = "";
-  $("#cnt-queue").textContent = q.filter(r => r.status !== "sent").length || "";
-  pickable = q.filter(r => r.status !== "sent").map(r => r.id);
+  const todo = activeRows.filter(r => r.status !== "sent");
+  const sent = activeRows.filter(r => r.status === "sent");
+  $("#cnt-queue").textContent = todo.length || "";
+  $("#cnt-sent").textContent = sent.length || "";
+  pickable = todo.map(r => r.id);
   for (const id of [...picked]) if (!pickable.includes(id)) picked.delete(id);
   drawPicks();
-  if (!q.length){
-    host.appendChild(el("tr", null, "<td class='empty' colspan='6'>Nothing here yet — mark companies “to contact” with the ☆ in the research tables.</td>"));
+  drawTodo(todo);
+  drawSent(sent);
+}
+
+function drawTodo(rows){
+  const host = $("#o-active");
+  host.innerHTML = "";
+  if (!rows.length){
+    host.appendChild(el("tr", null, "<td class='empty' colspan='4'>Nothing to do — mark companies “to contact” with the ☆ in the research tables.</td>"));
     return;
   }
-  for (const r of sortedActive()){
+  for (const r of sortedRows(rows, listSort.todo)){
     const tr = el("tr");
-    const sent = r.sent_at ? `<span class="when" title="Sent ${esc(r.sent_at.slice(0,10))}">${esc(relTime(r.sent_at))}</span>`
-                           : `<span class="wait">—</span>`;
-    const reply = r.replied_at ? `<span class="rep" title="Replied ${esc(r.replied_at.slice(0,10))}">↩ replied</span>`
-                : r.sent_at ? `<span class="wait">awaiting</span>` : `<span class="wait">—</span>`;
     tr.innerHTML = `
       <td class="pick"></td>
       <td class="co">${esc(r.company)}<span class="line">${esc(r.subject || "")}</span></td>
       <td><span class="to">${esc(r.contact_email || "—")}</span></td>
       <td><span class="qstat ${esc(r.status)}">${esc(QUEUE_LABEL[r.status] || r.status)}</span>${
         r.approved ? `<span class="fixes" title="Approved by hand despite the review">✓ approved</span>`
-        : r.fixes && r.status !== "sent" ? `<span class="fixes">${esc(plural(r.fixes, "fix", "fixes"))}</span>` : ""}</td>
-      <td>${sent}</td>
+        : r.fixes ? `<span class="fixes">${esc(plural(r.fixes, "fix", "fixes"))}</span>` : ""}</td>`;
+    const cb = el("input"); cb.type = "checkbox"; cb.checked = picked.has(r.id);
+    cb.title = "Select to draft or send";
+    cb.onclick = e => { e.stopPropagation(); cb.checked ? picked.add(r.id) : picked.delete(r.id); drawPicks(); };
+    const cell = tr.querySelector("td.pick");
+    cell.onclick = e => { if (e.target === cell){ e.stopPropagation(); cb.click(); } };  // easier target
+    cell.appendChild(cb);
+    tr.onclick = () => openDrawer(r.id, {emailOnly: true});
+    host.appendChild(tr);
+  }
+}
+
+function drawSent(rows){
+  const host = $("#o-sent");
+  host.innerHTML = "";
+  if (!rows.length){
+    host.appendChild(el("tr", null, "<td class='empty' colspan='4'>Nothing sent yet.</td>"));
+    return;
+  }
+  for (const r of sortedRows(rows, listSort.sent)){
+    const tr = el("tr");
+    const reply = r.replied_at ? `<span class="rep" title="Replied ${esc(r.replied_at.slice(0,10))}">↩ replied</span>`
+                               : `<span class="wait">awaiting</span>`;
+    tr.innerHTML = `
+      <td class="co">${esc(r.company)}<span class="line">${esc(r.subject || "")}</span></td>
+      <td><span class="to">${esc(r.contact_email || "—")}</span></td>
+      <td><span class="when" title="Sent ${esc(r.sent_at.slice(0,10))}">${esc(relTime(r.sent_at))}</span></td>
       <td>${reply}</td>`;
-    if (r.status !== "sent"){
-      const cb = el("input"); cb.type = "checkbox"; cb.checked = picked.has(r.id);
-      cb.title = "Select to draft";
-      cb.onclick = e => { e.stopPropagation(); cb.checked ? picked.add(r.id) : picked.delete(r.id); drawPicks(); };
-      const cell = tr.querySelector("td.pick");
-      cell.onclick = e => { if (e.target === cell){ e.stopPropagation(); cb.click(); } };  // easier target
-      cell.appendChild(cb);
-    }
     tr.onclick = () => openDrawer(r.id, {emailOnly: true});
     host.appendChild(tr);
   }
@@ -964,7 +1000,7 @@ function watchSendJob(started = false){
     if (j.done !== lastDone){ lastDone = j.done; loadActive(); }
     if (j.running){ ours = true; return; }
     clearInterval(sendPoll);
-    loadOutreach();                          // sent counters + pipeline
+    loadOutreach();                          // sent counters + To do / Sent
     if (!ours) return;
     if (j.error) toast("Sending failed: " + j.error);
     else toast(`Sent ${j.sent} of ${j.total}` + (j.skipped ? `, ${j.skipped} already sent` : "") +
@@ -1378,15 +1414,15 @@ function emailSection(id, existing, sends, queued, language, approved){
       refreshAfterDrawerChange();
     } catch (e){ toast("Couldn't remove: " + e.message); remove.disabled = false; }
   };
-  // Drafting lives in Pipeline ("Draft all" / "Draft N selected"), not here.
+  // Drafting lives in To do ("Draft all" / "Draft N selected"), not here.
   const out = el("div", "email-out");
   // The toolbar's first slot holds the draft's own buttons (New contact info /
   // subject / body); renderEmail fills it and refills it on every redraw.
   const tools = el("span", "email-tools");
   if (existing) renderEmail(id, out, existing, sends, tools);
   else out.appendChild(el("div", "email-none",
-    "No draft yet — tick this company in Pipeline and use “Draft selected”."));
-  // EN/ES: the language the next draft (from Pipeline) is written in. Saved on
+    "No draft yet — tick this company in To do and use “Draft selected”."));
+  // EN/ES: the language the next draft (from To do) is written in. Saved on
   // click; the current draft stays as it is until it's redrafted.
   const seg = el("div", "lang-seg");
   seg.title = "Language for the next draft";
@@ -1497,7 +1533,7 @@ function renderEmail(id, out, email, sends, tools){
 
   // Autosave hand edits to the subject/body: shortly after typing stops, on
   // blur, and on drawer close. The server re-runs the rule checks, so the
-  // Pipeline status follows the edit.
+  // The To do status follows the edit.
   const saveNote = el("div", "email-autosave");
   let saveT = null, saved = email.subject + "\0" + email.body;
   async function saveEdits(){
@@ -1843,7 +1879,7 @@ function pollRun(tab, runId, btn){
 
 // --- boot ---
 const [hTab, hSub] = location.hash.slice(1).split("/");
-switchSub(hTab === "outreach" && ["stats", "blocked"].includes(hSub) ? hSub : "pipeline");
+switchSub(hTab === "outreach" && ["sent", "stats", "blocked"].includes(hSub) ? hSub : "todo");
 switchTab(hTab === "research" ? ({ companies: "companies", stats: "rstats" }[hSub] || "niche")
         : ["niches", "niche", "companies", "outreach"].includes(hTab) ? hTab : "niche");
 // Fill every subtab counter up front, not just the landing view's: load the
