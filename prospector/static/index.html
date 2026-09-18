@@ -71,6 +71,14 @@
   .tabs button:hover { color: var(--ink); }
   .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
 
+  /* LiteLLM budget left (shared by all models on the key); click to refresh */
+  .budget { font-family: var(--mono); font-size: 12px; color: var(--ink-2); background: none;
+            border: 1px solid var(--hairline); border-radius: 999px; padding: 4px 10px; cursor: pointer;
+            white-space: nowrap; }
+  .budget:hover { border-color: var(--accent); }
+  .budget.low { color: var(--tier-c); border-color: var(--tier-c); }
+  .budget.out { color: var(--tier-d); border-color: var(--tier-d); }
+
   .tabpane { display: none; }
   .tabpane.on { display: block; }
 
@@ -480,6 +488,7 @@
   @media (max-width: 520px) {
     .tabs button { padding: 10px 9px; }
     #themeBtn .lbl { display: none; }
+    .budget .lbl { display: none; }
   }
 </style>
 
@@ -490,6 +499,7 @@
       <button data-tab="research">Research</button>
       <button data-tab="outreach">Outreach</button>
     </nav>
+    <button class="budget" id="budget" hidden></button>
     <button class="icon-btn" id="themeBtn" title="Toggle theme">◐<span class="lbl"> Theme</span></button>
   </div>
 
@@ -1945,6 +1955,26 @@ function pollRun(tab, runId, btn){
   }, 2500);
 }
 
+// LiteLLM budget badge. Hidden when not on a proxy; warns under 20% / $1 left.
+async function loadBudget(refresh){
+  const b = $("#budget");
+  let r; try { r = await fetch("/api/llm/budget" + (refresh ? "?refresh=1" : "")).then(x=>x.json()); } catch { return; }
+  if (!r.available){ b.hidden = true; return; }
+  b.hidden = false;
+  const money = v => "$" + v.toFixed(2);
+  if (r.remaining == null){
+    b.innerHTML = `${money(r.spend)}<span class="lbl"> LLM spend</span>`;
+    b.className = "budget";
+  } else {
+    b.innerHTML = `${money(r.remaining)}<span class="lbl"> of ${money(r.max_budget)} LLM budget left</span>`;
+    b.className = "budget" + (r.remaining <= 0 ? " out"
+      : r.remaining < Math.max(1, r.max_budget * .2) ? " low" : "");
+  }
+  b.title = `LiteLLM key budget, shared by all models. Spent ${money(r.spend)}`
+    + (r.max_budget != null ? ` of ${money(r.max_budget)}` : "") + ". Click to refresh.";
+}
+$("#budget").onclick = () => loadBudget(true);
+
 // --- boot ---
 const [hTab, hSub] = location.hash.slice(1).split("/");
 switchSub(hTab === "outreach" && ["sent", "stats", "blocked"].includes(hSub) ? hSub : "todo");
@@ -1954,4 +1984,6 @@ switchTab(hTab === "research" ? ({ companies: "companies", stats: "rstats" }[hSu
 // result lists and outreach lists the view above didn't already fetch.
 for (const v of ["niche", "companies"]) if (v !== state.tab) loadGroups(v);
 if (state.tab !== "outreach"){ loadActive(); loadBlocked(); }
+loadBudget();
+setInterval(loadBudget, 120000);
 </script>

@@ -244,6 +244,27 @@ def test_gmail_status_disconnected(client, monkeypatch, tmp_path):
     assert r.json() == {"connected": False, "email": None}
 
 
+def test_llm_budget_without_proxy(client, monkeypatch):
+    # Empty, not unset: load_env() would otherwise pull the real proxy from .env.
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "")
+    r = client.get("/api/llm/budget?refresh=1")
+    assert r.status_code == 200
+    assert r.json()["available"] is False
+
+
+def test_llm_budget_falls_back_to_paid_probe(client, monkeypatch):
+    from prospector import budget
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://proxy")
+    tried = []
+    def fake_probe(base, key, model):
+        tried.append(model)
+        return None if model == budget.DEFAULT_FREE_PROBE else (10.0, 6.5)
+    monkeypatch.setattr(budget, "_probe", fake_probe)
+    r = client.get("/api/llm/budget?refresh=1").json()
+    assert tried == [budget.DEFAULT_FREE_PROBE, budget.DEFAULT_PAID_PROBE]
+    assert r == {"available": True, "max_budget": 10.0, "spend": 6.5, "remaining": 3.5}
+
+
 def test_outreach_endpoint(client):
     pid = db.insert_prospect(make_record("Acme"))
     db.mark_sent(pid, "m", "t")

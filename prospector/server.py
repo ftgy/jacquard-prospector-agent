@@ -328,6 +328,13 @@ def api_gmail_status():
     return {"connected": True, "email": gmailer.sender_address()}
 
 
+@app.get("/api/llm/budget")
+def api_llm_budget(refresh: bool = False):
+    """How much of the LiteLLM key's (shared, all-model) budget is left."""
+    from . import budget
+    return budget.llm_budget(force=refresh)
+
+
 @app.get("/api/outreach")
 def api_outreach():
     """Send/reply statistics for the Outreach tab."""
