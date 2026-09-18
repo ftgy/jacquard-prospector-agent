@@ -440,3 +440,19 @@ def test_save_email_endpoint(client):
     assert db.get_prospect(pid)["email"]["subject"] == "new"
     assert client.put("/api/prospects/9999/email",
                       json={"subject": "s", "body": "b"}).status_code == 404
+
+
+def test_set_language_endpoint(client, monkeypatch):
+    from prospector import db
+    from tests.conftest import make_record
+    monkeypatch.setenv("OUTPUT_LANGUAGE", "spanish")
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_queued(pid, True)
+    assert client.get("/api/outreach/active").json()[0]["language"] == "spanish"  # default
+    assert client.put(f"/api/prospects/{pid}/language",
+                      json={"language": "english"}).json()["language"] == "english"
+    assert client.get("/api/outreach/active").json()[0]["language"] == "english"
+    assert client.put(f"/api/prospects/{pid}/language",
+                      json={"language": "french"}).status_code == 422
+    assert client.put("/api/prospects/9999/language",
+                      json={"language": "english"}).status_code == 404

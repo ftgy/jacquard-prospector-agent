@@ -768,3 +768,19 @@ def test_save_email_edits_needs_a_draft():
         service.save_email_edits(pid, "s", "b")
     with pytest.raises(LookupError):
         service.save_email_edits(9999, "s", "b")
+
+
+def test_draft_email_for_language_follows_pipeline_pick(monkeypatch):
+    seen = []
+    monkeypatch.setattr(service, "draft_outreach_email",
+                        lambda client, record, icp, language: seen.append(language)
+                        or {"subject": "s", "body": "b"})
+    monkeypatch.setattr(service, "find_contact", lambda client, rec: None)
+    monkeypatch.setattr(service, "email_review_enabled", lambda: False)
+    monkeypatch.setenv("OUTPUT_LANGUAGE", "spanish")
+    pid = db.insert_prospect(make_record("Acme"))
+    service.draft_email_for(pid, client=FakeClient())            # global default
+    db.set_draft_language(pid, "english")
+    service.draft_email_for(pid, client=FakeClient())            # the pick wins
+    assert seen == ["spanish", "english"]
+    assert db.get_prospect(pid)["email"]["language"] == "english"

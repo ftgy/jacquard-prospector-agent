@@ -97,6 +97,7 @@ def init_db() -> None:
                 replied_at       TEXT,   -- when a reply was first detected
                 queued_at        TEXT,   -- marked "to contact": auto-draft queue
                 email_review     TEXT,   -- JSON: lint + Claude review of the draft
+                draft_lang       TEXT,   -- language the next draft is written in
                 error            TEXT,
                 created_at       TEXT NOT NULL
             );
@@ -129,7 +130,8 @@ def init_db() -> None:
         for col in ("domain", "notes", "email_subject", "email_body", "email_at",
                     "email_lang", "contact_email", "contact_phone", "contact_website",
                     "contact_source", "contact_at", "sent_at", "gmail_message_id",
-                    "gmail_thread_id", "replied_at", "queued_at", "email_review"):
+                    "gmail_thread_id", "replied_at", "queued_at", "email_review",
+                    "draft_lang"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT")
         # runs.category_id was added after the first release (niche categories).
@@ -501,6 +503,7 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
     }
     if full:
         rec["notes"] = row["notes"]
+        rec["draft_lang"] = row["draft_lang"]
         rec["email"] = (
             {"subject": row["email_subject"], "body": row["email_body"],
              "generated_at": row["email_at"], "language": row["email_lang"],
@@ -631,6 +634,14 @@ def set_email_review(prospect_id: int, review: dict | None) -> bool:
         return cur.rowcount > 0
 
 
+def set_draft_language(prospect_id: int, language: str) -> bool:
+    """Pick the language the prospect's next draft is written in (Pipeline)."""
+    with _connect() as conn:
+        cur = conn.execute("UPDATE prospects SET draft_lang=? WHERE id=?",
+                           (language, prospect_id))
+        return cur.rowcount > 0
+
+
 def set_queued(prospect_id: int, queued: bool) -> bool:
     """Mark (or unmark) a prospect "to contact". Re-marking keeps the original
     timestamp, so the queue stays first-marked-first-drafted."""
@@ -734,7 +745,8 @@ def active_contacts() -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, company, tier, fit_score, queued_at, email_subject, email_at, "
-            "contact_email, email_review, sent_at, replied_at FROM prospects "
+            "contact_email, email_review, sent_at, replied_at, draft_lang, email_lang "
+            "FROM prospects "
             "WHERE (queued_at IS NOT NULL OR sent_at IS NOT NULL) AND error IS NULL "
             "ORDER BY sent_at IS NOT NULL, "
             "CASE WHEN sent_at IS NULL THEN queued_at END, sent_at DESC, id",
@@ -759,6 +771,9 @@ def active_contacts() -> list[dict]:
             "contact_email": r["contact_email"], "status": status,
             "fixes": len((review or {}).get("issues") or []),
             "sent_at": r["sent_at"], "replied_at": r["replied_at"],
+            # next draft's language: the pick, else the current draft's; None
+            # means the global default (the API fills it in)
+            "language": r["draft_lang"] or r["email_lang"],
         })
     return out
 

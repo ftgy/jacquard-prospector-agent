@@ -551,3 +551,16 @@ def test_blocked_drafts_lists_failed_reviews_with_reasons():
     assert errored_item["reasons"][0] == {"rule": "review-error", "detail": "proxy down"}
     assert out["summary"] == [{"rule": "self-intro", "count": 2},
                               {"rule": "review-error", "count": 1}]
+
+
+def test_active_contacts_language_is_pick_then_draft_language():
+    a, b, c = (db.insert_prospect(make_record(n)) for n in "ABC")
+    for pid in (a, b, c):
+        db.set_queued(pid, True)
+    db.set_prospect_email(b, "s", "b", "spanish")
+    db.set_prospect_email(c, "s", "b", "spanish")
+    assert db.set_draft_language(c, "english")
+    lang = {r["id"]: r["language"] for r in db.active_contacts()}
+    assert lang == {a: None, b: "spanish", c: "english"}
+    assert db.get_prospect(c)["draft_lang"] == "english"
+    assert not db.set_draft_language(9999, "english")

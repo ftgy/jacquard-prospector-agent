@@ -13,6 +13,7 @@ Run it:
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -20,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import db
-from .config import describe_target, load_env, make_client
+from .config import describe_target, get_output_language, load_env, make_client
 
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
@@ -78,6 +79,10 @@ class EmailRequest(BaseModel):
     language: str | None = Field(None, pattern="^(english|spanish)$")
 
 
+class LanguageRequest(BaseModel):
+    language: Literal["english", "spanish"]
+
+
 class QueueRequest(BaseModel):
     queued: bool
 
@@ -128,6 +133,15 @@ def api_set_notes(prospect_id: int, req: NotesRequest):
     if not db.set_prospect_notes(prospect_id, req.notes):
         raise HTTPException(404, "prospect not found")
     return {"id": prospect_id, "notes": req.notes.strip() or None}
+
+
+@app.put("/api/prospects/{prospect_id}/language")
+def api_set_language(prospect_id: int, req: LanguageRequest):
+    """Pick the language the prospect's next draft is written in (the Pipeline
+    selector). The current draft is left as it is until it's redrafted."""
+    if not db.set_draft_language(prospect_id, req.language):
+        raise HTTPException(404, "prospect not found")
+    return {"id": prospect_id, "language": req.language}
 
 
 @app.put("/api/prospects/{prospect_id}/queue")
@@ -309,7 +323,8 @@ def api_outreach_blocked():
 def api_outreach_active():
     """The pipeline: queued-but-unsent prospects plus everyone already emailed,
     with draft status and last send."""
-    return db.active_contacts()
+    default = get_output_language()
+    return [{**r, "language": r["language"] or default} for r in db.active_contacts()]
 
 
 @app.post("/api/outreach/refresh-replies")
