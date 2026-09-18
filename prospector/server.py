@@ -232,10 +232,11 @@ def api_outreach_blocked():
     return db.blocked_drafts()
 
 
-@app.get("/api/outreach/queue")
-def api_outreach_queue():
-    """Prospects marked "to contact" and not yet sent, with their draft status."""
-    return db.outreach_queue()
+@app.get("/api/outreach/active")
+def api_outreach_active():
+    """The pipeline: queued-but-unsent prospects plus everyone already emailed,
+    with draft status and last send."""
+    return db.active_contacts()
 
 
 @app.post("/api/outreach/refresh-replies")

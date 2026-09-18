@@ -357,10 +357,10 @@ def test_queue_endpoints(client):
     r = client.put(f"/api/prospects/{pid}/queue", json={"queued": True})
     assert r.status_code == 200
     assert client.get(f"/api/prospects/{pid}").json()["queued_at"]
-    q = client.get("/api/outreach/queue").json()
+    q = client.get("/api/outreach/active").json()
     assert [(x["company"], x["status"]) for x in q] == [("Acme", "waiting")]
     client.put(f"/api/prospects/{pid}/queue", json={"queued": False})
-    assert client.get("/api/outreach/queue").json() == []
+    assert client.get("/api/outreach/active").json() == []
     assert client.put("/api/prospects/9999/queue", json={"queued": True}).status_code == 404
 
 

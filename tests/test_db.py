@@ -489,7 +489,7 @@ def test_set_queued_keeps_first_mark_and_unmarks():
     assert not db.set_queued(9999, True)
 
 
-def test_queued_needing_draft_and_outreach_queue_statuses():
+def test_queued_needing_draft_and_active_contacts_statuses():
     waiting = db.insert_prospect(make_record("Waiting"))
     ready = db.insert_prospect(make_record("Ready"))
     broken = db.insert_prospect(make_record("Broken"))
@@ -508,10 +508,27 @@ def test_queued_needing_draft_and_outreach_queue_statuses():
 
     assert db.queued_needing_draft() == [
         {"id": waiting, "company": "Waiting", "drafted": False}]
-    statuses = {q["company"]: q["status"] for q in db.outreach_queue()}
-    assert statuses == {"Waiting": "waiting", "Ready": "ready", "Broken": "needs-review"}
-    fixes = {q["company"]: q["fixes"] for q in db.outreach_queue()}
+    active = db.active_contacts()
+    statuses = {q["company"]: q["status"] for q in active}
+    assert statuses == {"Waiting": "waiting", "Ready": "ready", "Broken": "needs-review",
+                        "Sent": "sent"}
+    assert active[-1]["company"] == "Sent" and active[-1]["sent_at"]  # sent rows last
+    fixes = {q["company"]: q["fixes"] for q in active}
     assert fixes["Ready"] == 1
+
+
+def test_active_contacts_keeps_sent_prospects_even_when_unqueued():
+    old = db.insert_prospect(make_record("Old"))
+    new = db.insert_prospect(make_record("New"))
+    db.insert_prospect(make_record("Untouched"))
+    db.mark_sent(old, "m1", "t1")
+    db.mark_sent(new, "m2", "t2")
+    with db._connect() as conn:  # same-second sends: pin distinct timestamps
+        conn.execute("UPDATE prospects SET sent_at='2026-01-01T00:00:00+00:00' WHERE id=?", (old,))
+    db.mark_replied(old, "2026-01-02T00:00:00")
+    active = db.active_contacts()
+    assert [a["company"] for a in active] == ["New", "Old"]  # most recent send first
+    assert active[1]["replied_at"]
 
 
 def test_blocked_drafts_lists_failed_reviews_with_reasons():

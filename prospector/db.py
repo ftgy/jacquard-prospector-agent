@@ -687,23 +687,28 @@ def blocked_drafts() -> dict:
     return {"summary": summary, "items": items}
 
 
-def outreach_queue() -> list[dict]:
-    """Every queued, unsent prospect with its draft state, for the Outreach tab.
+def active_contacts() -> list[dict]:
+    """The Outreach pipeline: prospects marked "to contact" and not yet sent,
+    then everyone already emailed, each with its draft status and last send.
 
     status: 'waiting' (no draft yet), 'no-contact', 'needs-review' (review failed
-    or rules still broken after it), or 'ready'. Oldest mark first.
+    or rules still broken after it), 'ready', or 'sent'. Unsent rows come first,
+    oldest mark first; sent rows follow, most recent send first.
     """
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, company, tier, fit_score, queued_at, email_subject, email_at, "
-            "contact_email, email_review FROM prospects "
-            "WHERE queued_at IS NOT NULL AND sent_at IS NULL AND error IS NULL "
-            "ORDER BY queued_at, id",
+            "contact_email, email_review, sent_at, replied_at FROM prospects "
+            "WHERE (queued_at IS NOT NULL OR sent_at IS NOT NULL) AND error IS NULL "
+            "ORDER BY sent_at IS NOT NULL, "
+            "CASE WHEN sent_at IS NULL THEN queued_at END, sent_at DESC, id",
         ).fetchall()
     out = []
     for r in rows:
         review = json.loads(r["email_review"]) if r["email_review"] else None
-        if not r["email_subject"]:
+        if r["sent_at"]:
+            status = "sent"
+        elif not r["email_subject"]:
             status = "waiting"
         elif not review or review.get("error") or review.get("remaining"):
             status = "needs-review"
@@ -717,6 +722,7 @@ def outreach_queue() -> list[dict]:
             "subject": r["email_subject"], "drafted_at": r["email_at"],
             "contact_email": r["contact_email"], "status": status,
             "fixes": len((review or {}).get("issues") or []),
+            "sent_at": r["sent_at"], "replied_at": r["replied_at"],
         })
     return out
 
