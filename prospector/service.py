@@ -403,20 +403,30 @@ def release_draft_lock(fh) -> None:
     fh.close()
 
 
-def draft_queued(limit: int = 10, client: anthropic.Anthropic | None = None,
+def draft_queued(limit: int | None = 10, client: anthropic.Anthropic | None = None,
                  log=None, on_progress=None, pace: float = DRAFT_PACE_SECONDS) -> dict:
     """Draft + review emails for up to `limit` queued prospects. Caller holds the lock.
 
     Never-drafted prospects get a full draft (draft_email_for); ones whose review
-    failed last time only get the review re-run (review_email_for). `log(level,
-    msg)` receives one line per prospect; `on_progress(counts, current)` is called
-    before each prospect and once at the end with current=None. A burst of
-    consecutive failures (including failed reviews — usually the Anthropic side
-    being down) aborts the batch. Returns {'total','done','ok','blocked','failed',
-    'aborted'}; 'blocked' drafts were stored but failed review or rule checks.
+    failed last time only get the review re-run (review_email_for). limit=None
+    drafts until nothing is left: after each pass it re-reads the queue (catching
+    prospects marked meanwhile), skipping ones already tried this run so a
+    failing prospect isn't retried in a loop. `log(level, msg)` receives one line
+    per prospect; `on_progress(counts, current)` is called before each prospect
+    and once at the end with current=None. A burst of consecutive failures
+    (including failed reviews — usually the Anthropic side being down) aborts the
+    run. Returns {'total','done','ok','blocked','failed','aborted'}; 'blocked'
+    drafts were stored but failed review or rule checks.
     """
     log = log or (lambda level, msg: None)
-    work = db.queued_needing_draft(limit)
+    tried: set[int] = set()
+
+    def next_work() -> list[dict]:
+        if limit is not None:
+            return db.queued_needing_draft(limit)
+        return [w for w in db.queued_needing_draft(None) if w["id"] not in tried]
+
+    work = next_work()
     counts = {"total": len(work), "done": 0, "ok": 0, "blocked": 0, "failed": 0,
               "aborted": False}
     if not work:
@@ -424,44 +434,52 @@ def draft_queued(limit: int = 10, client: anthropic.Anthropic | None = None,
         return counts
     client = client or make_client()
     consecutive = 0
-    for i, w in enumerate(work):
-        if on_progress:
-            on_progress(counts, w["company"])
-        try:
-            if w["drafted"]:
-                email = review_email_for(w["id"], client=client)
-            else:
-                email = draft_email_for(w["id"], client=client)
-        except Exception as e:
-            consecutive += 1
-            counts["failed"] += 1
-            log("warning", f"✗ {w['company']} — {friendly_api_error(e).splitlines()[0][:160]}")
-        else:
-            review = email["review"]
-            if review.get("error"):
+    while work:
+        for i, w in enumerate(work):
+            tried.add(w["id"])
+            if on_progress:
+                on_progress(counts, w["company"])
+            try:
+                if w["drafted"]:
+                    email = review_email_for(w["id"], client=client)
+                else:
+                    email = draft_email_for(w["id"], client=client)
+            except Exception as e:
                 consecutive += 1
-                counts["blocked"] += 1
-                log("warning", f"~ {w['company']} — drafted, review failed: "
-                               f"{review['error'].splitlines()[0][:160]}")
+                counts["failed"] += 1
+                log("warning", f"✗ {w['company']} — {friendly_api_error(e).splitlines()[0][:160]}")
             else:
-                consecutive = 0
-                counts["blocked" if review["remaining"] else "ok"] += 1
-                contact = (email.get("contact") or {}).get("email") or "no contact"
-                log("info", f"✓ {w['company']} — {len(review['issues'])} fix(es), "
-                            f"{len(review['remaining'])} rule(s) still broken, {contact}")
-        counts["done"] += 1
-        if consecutive >= DRAFT_MAX_CONSECUTIVE_ERRORS:
-            counts["aborted"] = True
-            log("error", f"Aborting after {consecutive} consecutive failures.")
+                review = email["review"]
+                if review.get("error"):
+                    consecutive += 1
+                    counts["blocked"] += 1
+                    log("warning", f"~ {w['company']} — drafted, review failed: "
+                                   f"{review['error'].splitlines()[0][:160]}")
+                else:
+                    consecutive = 0
+                    counts["blocked" if review["remaining"] else "ok"] += 1
+                    contact = (email.get("contact") or {}).get("email") or "no contact"
+                    log("info", f"✓ {w['company']} — {len(review['issues'])} fix(es), "
+                                f"{len(review['remaining'])} rule(s) still broken, {contact}")
+            counts["done"] += 1
+            if consecutive >= DRAFT_MAX_CONSECUTIVE_ERRORS:
+                counts["aborted"] = True
+                log("error", f"Aborting after {consecutive} consecutive failures.")
+                break
+            if i < len(work) - 1:
+                time.sleep(pace)
+        if counts["aborted"] or limit is not None:
             break
-        if i < len(work) - 1:
+        work = next_work()          # anything marked while we were drafting
+        if work:
+            counts["total"] += len(work)
             time.sleep(pace)
     if on_progress:
         on_progress(counts, None)
     return counts
 
 
-def start_draft_queued_async(limit: int = 10,
+def start_draft_queued_async(limit: int | None = None,
                              client: anthropic.Anthropic | None = None) -> dict:
     """Run draft_queued on a background thread for the dashboard. Returns the
     initial job status. Raises RuntimeError if a draft run (this process's, or a

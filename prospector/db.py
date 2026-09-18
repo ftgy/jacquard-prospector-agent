@@ -633,9 +633,10 @@ def set_queued(prospect_id: int, queued: bool) -> bool:
         return cur.rowcount > 0
 
 
-def queued_needing_draft(limit: int = 10) -> list[dict]:
+def queued_needing_draft(limit: int | None = 10) -> list[dict]:
     """The auto-draft worklist: queued, not sent, and either never drafted or
     drafted but not yet reviewed (the review errored — e.g. the proxy was down).
+    limit=None returns all of them.
 
     Returns [{'id', 'company', 'drafted'}], oldest mark first; 'drafted' tells the
     caller it only needs to re-run the review, not write a new draft.
@@ -653,7 +654,7 @@ def queued_needing_draft(limit: int = 10) -> list[dict]:
             work.append({"id": r["id"], "company": r["company"], "drafted": False})
         elif review is None or review.get("error"):
             work.append({"id": r["id"], "company": r["company"], "drafted": True})
-        if len(work) >= limit:
+        if limit is not None and len(work) >= limit:
             break
     return work
 

@@ -596,7 +596,7 @@
         <h2>Active contacts</h2>
         <span class="draft-prog" id="draftProgress"></span>
         <span style="flex:1"></span>
-        <button class="icon-btn primary" id="draftNowBtn" title="Write and review emails for marked companies (nothing is sent)">✎ Draft now</button>
+        <button class="icon-btn primary" id="draftNowBtn" title="Write and review emails for marked companies (nothing is sent)">✎ Draft all</button>
       </div>
       <div class="scroll"><table class="otable oqueue">
         <thead><tr><th>Company</th><th>Contact</th><th>Draft</th><th>Last sent</th><th>Reply</th></tr></thead>
@@ -772,7 +772,7 @@ async function loadActive(){
   }
 }
 
-// "Draft now": runs the auto-draft job server-side, polling its progress and
+// "Draft all": runs the auto-draft job server-side, polling its progress and
 // refreshing the queue + blocked lists as each email lands.
 let draftPoll = null;
 $("#draftNowBtn").onclick = async () => {
@@ -791,7 +791,7 @@ function drawDraftJob(j){
     btn.disabled = true; btn.textContent = "✎ Drafting…";
     prog.textContent = j.total ? `${j.done}/${j.total}${j.current ? " · " + j.current : ""}` : "starting…";
   } else {
-    btn.disabled = !!j.locked_elsewhere; btn.textContent = "✎ Draft now";
+    btn.disabled = !!j.locked_elsewhere; btn.textContent = "✎ Draft all";
     prog.textContent = j.locked_elsewhere ? "a cron/terminal draft run is in progress" : "";
   }
 }

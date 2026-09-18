@@ -229,7 +229,8 @@ def api_outreach():
 @app.post("/api/outreach/draft-queued")
 def api_draft_queued():
     """Start drafting emails for the "to contact" queue in the background (the
-    same job as scripts/draft_queued.py). Returns the job status; poll
+    same job as scripts/draft_queued.py, but with no limit: it runs until the
+    queue is empty). Returns the job status; poll
     GET /api/outreach/draft-status. 409 if a draft run is already going."""
     from .service import start_draft_queued_async
     try:

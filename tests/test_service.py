@@ -552,6 +552,29 @@ def test_draft_queued_aborts_after_consecutive_failures(monkeypatch):
     assert counts["aborted"] is True
 
 
+def test_draft_queued_without_limit_runs_until_queue_empty(monkeypatch):
+    ids = [db.insert_prospect(make_record(f"C{n}")) for n in range(12)]
+    for pid in ids:
+        db.set_queued(pid, True)
+    late = db.insert_prospect(make_record("Late"))
+    calls = []
+
+    def fake_draft(pid, client=None):
+        calls.append(pid)
+        if len(calls) == 1:
+            db.set_queued(late, True)          # marked while the run is going
+        if pid == ids[3]:
+            raise RuntimeError("one bad draft")  # stays undrafted: must not loop
+        db.set_prospect_email(pid, "s", "b", "spanish")
+        return {"review": {"issues": [], "remaining": [], "error": None}}
+
+    monkeypatch.setattr(service, "draft_email_for", fake_draft)
+    counts = service.draft_queued(None, client=FakeClient(), pace=0)
+    assert sorted(calls) == sorted(ids + [late])   # past the old 10 cap, each once
+    assert counts == {"total": 13, "done": 13, "ok": 12, "blocked": 0, "failed": 1,
+                      "aborted": False}
+
+
 def test_start_draft_queued_async_refuses_when_locked():
     lock = service.acquire_draft_lock()
     try:
