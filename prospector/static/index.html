@@ -402,6 +402,13 @@
     background: var(--surface-2); border-radius: 6px; padding: 8px 10px; }
 
   /* outreach tab */
+  .subtabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .subtabs .tnum { font-family: var(--mono); font-size: 11px; border-radius: 999px; padding: 0 6px;
+                   background: var(--surface-2); color: var(--ink-2); }
+  .subtabs .tnum:empty { display: none; }
+  .subtabs .chip.on .tnum { background: color-mix(in srgb, var(--surface) 22%, transparent); color: var(--surface); }
+  .subpane { display: none; }
+  .subpane.on { display: block; }
   .gmail-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
     padding: 11px 14px; border-radius: 10px; margin-bottom: 16px; border: 1px solid var(--hairline); }
   .gmail-banner.ok { background: color-mix(in srgb, var(--tier-a) 9%, var(--surface));
@@ -557,6 +564,12 @@
 
   <!-- Tab 4: Outreach -->
   <section class="tabpane" id="pane-outreach">
+    <div class="subtabs" id="o-subtabs">
+      <button class="chip" data-sub="pipeline">Pipeline <span class="tnum" id="cnt-queue"></span></button>
+      <button class="chip" data-sub="stats">Statistics</button>
+    </div>
+
+    <div class="subpane" id="o-sub-stats">
     <div id="gmail-status"></div>
     <div class="ostats">
       <div class="ostat accent"><div class="k">Sent today</div><div class="v" id="o-today">—</div></div>
@@ -574,6 +587,10 @@
       <div class="obars" id="o-bars"></div>
       <div class="legend"><span><i style="background:var(--accent)"></i>Sent</span><span><i style="background:var(--tier-a)"></i>Replied</span></div>
     </div>
+    <p class="pane-hint">Sends and replies are tracked through your connected Gmail account. Counts are by local day.</p>
+    </div>
+
+    <div class="subpane" id="o-sub-pipeline">
 
     <div class="panel">
       <div style="display:flex;align-items:baseline;gap:12px">
@@ -595,7 +612,8 @@
       <h2>Recent sends</h2>
       <ul class="orecent" id="o-recent"></ul>
     </div>
-    <p class="pane-hint">Mark companies “to contact” from their detail panel; <code>scripts/draft_queued.py</code> drafts and reviews their emails. Sends and replies are tracked through your connected Gmail account. Counts are by local day.</p>
+    <p class="pane-hint">Mark companies “to contact” from their detail panel; <code>scripts/draft_queued.py</code> drafts and reviews their emails.</p>
+    </div>
   </section>
 </div>
 
@@ -655,7 +673,7 @@ function switchTab(tab){
   const research = tab === "niche" || tab === "companies";
   $("#stats").style.display = research ? "" : "none";
   $("#filters").style.display = research ? "" : "none";
-  location.hash = tab;
+  location.hash = tab === "outreach" && state.osub !== "pipeline" ? "outreach/" + state.osub : tab;
   if (research){
     // Relocate the shared filter bar into the active pane, just above its
     // results (below the run panel) — one element serves both research tabs.
@@ -683,6 +701,15 @@ async function loadStats(){
 }
 
 // --- outreach ---
+// Two subtabs: "pipeline" (queue, blocked, sends; the default) and "stats" (counters + chart).
+document.querySelectorAll("#o-subtabs button").forEach(b => b.onclick = () => switchSub(b.dataset.sub));
+function switchSub(sub){
+  state.osub = sub;
+  document.querySelectorAll("#o-subtabs button").forEach(b => b.classList.toggle("on", b.dataset.sub === sub));
+  document.querySelectorAll("#pane-outreach .subpane").forEach(p => p.classList.toggle("on", p.id === "o-sub-" + sub));
+  if (state.tab === "outreach") location.hash = sub === "pipeline" ? "outreach" : "outreach/" + sub;
+}
+
 async function loadOutreach(){
   loadGmailStatus();
   loadQueue();
@@ -725,6 +752,7 @@ async function loadQueue(){
   const host = $("#o-queue");
   let q; try { q = await fetch("/api/outreach/queue").then(r=>r.json()); } catch { return; }
   host.innerHTML = "";
+  $("#cnt-queue").textContent = q.length || "";
   if (!q.length){ host.appendChild(el("li", null, "<span class='wait'>Nothing queued — mark companies “to contact” from their detail panel.</span>")); return; }
   for (const r of q){
     const li = el("li");
@@ -1583,6 +1611,7 @@ function pollRun(tab, runId, btn){
 }
 
 // --- boot ---
-const start = ["niches","niche","companies","outreach"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "niche";
-switchTab(start);
+const [hTab, hSub] = location.hash.slice(1).split("/");
+switchSub(hSub === "stats" ? "stats" : "pipeline");
+switchTab(["niches","niche","companies","outreach"].includes(hTab) ? hTab : "niche");
 </script>
