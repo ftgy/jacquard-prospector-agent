@@ -494,6 +494,8 @@ def start_draft_queued_async(limit: int | None = None,
     with _draft_job_guard:
         if _draft_job.get("running"):
             raise RuntimeError("A draft run is already in progress.")
+        if _send_job.get("running"):
+            raise RuntimeError("Emails are being sent — wait for that to finish.")
         lock = acquire_draft_lock()
         if lock is None:
             raise RuntimeError("A draft run (cron or terminal) is already in progress.")
@@ -592,6 +594,100 @@ def send_outreach(prospect_id: int, subject: str | None = None,
         "sent_at": (updated.get("email") or {}).get("sent_at"),
         "thread_id": sent["thread_id"],
     }
+
+
+SEND_PACE_SECONDS = 2.0          # gap between sends (be gentle with Gmail)
+SEND_MAX_CONSECUTIVE_ERRORS = 3  # abort the batch — Gmail is likely down
+
+# Progress of the dashboard's "Send all" job, polled by GET /api/outreach/send-status.
+_send_job: dict = {"running": False}
+
+
+def sendable(ids: list[int] | None = None) -> list[dict]:
+    """The "Send all" worklist: pipeline rows whose status is 'ready' (reviewed,
+    no broken rules, has a contact), limited to `ids` when given. Same order as
+    the Pipeline table. Returns [{'id', 'company'}]."""
+    wanted = set(ids) if ids is not None else None
+    return [{"id": r["id"], "company": r["company"]} for r in db.active_contacts()
+            if r["status"] == "ready" and (wanted is None or r["id"] in wanted)]
+
+
+def send_ready(ids: list[int] | None = None, on_progress=None,
+               pace: float = SEND_PACE_SECONDS) -> dict:
+    """Send the stored draft of every ready prospect (or just the ready ones of
+    `ids`) via Gmail, one by one. A prospect sent meanwhile (e.g. from the
+    drawer) is skipped, never sent twice. `on_progress(counts, current)` is
+    called before each send and once at the end with current=None. Stops after
+    SEND_MAX_CONSECUTIVE_ERRORS failures in a row. Returns {'total', 'done',
+    'sent', 'skipped', 'failed', 'aborted', 'last_error'}.
+    """
+    work = sendable(ids)
+    counts = {"total": len(work), "done": 0, "sent": 0, "skipped": 0, "failed": 0,
+              "aborted": False, "last_error": None}
+    consecutive = 0
+    for i, w in enumerate(work):
+        if on_progress:
+            on_progress(counts, w["company"])
+        rec = db.get_prospect(w["id"])
+        if rec is None or (rec.get("email") or {}).get("sent_at"):
+            counts["skipped"] += 1
+        else:
+            try:
+                send_outreach(w["id"])
+            except Exception as e:
+                consecutive += 1
+                counts["failed"] += 1
+                counts["last_error"] = f"{w['company']}: {friendly_api_error(e).splitlines()[0][:160]}"
+            else:
+                consecutive = 0
+                counts["sent"] += 1
+        counts["done"] += 1
+        if consecutive >= SEND_MAX_CONSECUTIVE_ERRORS:
+            counts["aborted"] = True
+            break
+        if i < len(work) - 1:
+            time.sleep(pace)
+    if on_progress:
+        on_progress(counts, None)
+    return counts
+
+
+def start_send_ready_async(ids: list[int] | None = None) -> dict:
+    """Run send_ready on a background thread for the dashboard's "Send all".
+    Returns the initial job status. Raises RuntimeError if a send or draft job
+    is already running, gmailer.GmailNotConfigured if Gmail isn't connected."""
+    with _draft_job_guard:
+        if _send_job.get("running"):
+            raise RuntimeError("Emails are already being sent.")
+        if _draft_job.get("running"):
+            raise RuntimeError("A draft run is in progress — wait for it to finish.")
+        gmailer.ensure_authorized()
+        _send_job.clear()
+        _send_job.update(running=True, total=0, done=0, sent=0, skipped=0, failed=0,
+                         aborted=False, last_error=None, current=None, error=None,
+                         started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                         finished_at=None)
+
+    def progress(counts, current):
+        _send_job.update(counts, current=current)
+
+    def work():
+        try:
+            send_ready(ids, on_progress=progress)
+        except Exception as e:  # unexpected — surface it instead of a stuck job
+            _send_job["error"] = friendly_api_error(e)
+        finally:
+            _send_job.update(running=False, current=None,
+                             finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+
+    status = send_job_status()   # snapshot first, as in start_draft_queued_async
+    threading.Thread(target=work, daemon=True).start()
+    return status
+
+
+def send_job_status() -> dict:
+    """The dashboard "Send all" job's progress."""
+    return dict(_send_job)
 
 
 def refresh_replies() -> dict:

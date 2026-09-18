@@ -83,7 +83,8 @@ class QueueRequest(BaseModel):
 
 
 class DraftRequest(BaseModel):
-    # Prospect ids to draft ("Draft selected"). Omitted -> the whole queue.
+    # Prospect ids to draft ("Draft selected") or send ("Send selected").
+    # Omitted -> the whole queue / every ready draft.
     ids: list[int] | None = Field(None, max_length=500)
 
 
@@ -253,6 +254,30 @@ def api_draft_status():
     """Progress of the dashboard-started draft job."""
     from .service import draft_job_status
     return draft_job_status()
+
+
+@app.post("/api/outreach/send-ready")
+def api_send_ready(req: DraftRequest | None = None):
+    """Start sending, in the background, every draft whose status is "ready";
+    optional body {ids: [...]} limits it to those prospects (others are skipped).
+    Returns the job status; poll GET /api/outreach/send-status. 409 if a send or
+    draft job is already running, 400 if Gmail isn't connected."""
+    from .gmailer import GmailNotConfigured
+    from .service import start_send_ready_async
+    try:
+        ids = (req or DraftRequest()).ids
+        return start_send_ready_async(ids=ids) if ids else start_send_ready_async()
+    except GmailNotConfigured as e:  # a RuntimeError too — catch it first
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/outreach/send-status")
+def api_send_status():
+    """Progress of the dashboard-started "Send all" job."""
+    from .service import send_job_status
+    return send_job_status()
 
 
 @app.get("/api/outreach/blocked")

@@ -653,3 +653,95 @@ def test_redraft_subject_needs_a_draft():
         service.redraft_subject_for(pid, client=object())
     with pytest.raises(LookupError):
         service.redraft_subject_for(9999, client=object())
+
+
+# --- "Send all": send every ready draft ---------------------------------------
+
+def _ready(name, contact="hola@x.es"):
+    """A queued prospect with a reviewed, rule-clean draft (status 'ready')."""
+    pid = db.insert_prospect(make_record(name))
+    db.set_queued(pid, True)
+    db.set_prospect_email(pid, f"subj {name}", f"body {name}", "spanish")
+    db.set_email_review(pid, {"issues": [], "remaining": [], "error": None})
+    if contact:
+        db.set_prospect_contact(pid, contact)
+    return pid
+
+
+def _fake_gmail(monkeypatch, fail_for=()):
+    from prospector import gmailer
+    sent = []
+
+    def send_email(to, subject, body):
+        if subject in fail_for:
+            raise RuntimeError("gmail down")
+        sent.append(subject)
+        return {"message_id": "m", "thread_id": "t"}
+
+    monkeypatch.setattr(gmailer, "send_email", send_email)
+    return sent
+
+
+def test_send_ready_sends_only_ready_drafts(monkeypatch):
+    sent = _fake_gmail(monkeypatch)
+    a = _ready("A")
+    _ready("NoContact", contact=None)
+    blocked = _ready("Blocked")
+    db.set_email_review(blocked, {"issues": [], "remaining": [{"rule": "x"}], "error": None})
+    counts = service.send_ready(pace=0)
+    assert sent == ["subj A"]
+    assert counts["total"] == counts["sent"] == 1 and counts["failed"] == 0
+    assert db.get_prospect(a)["email"]["sent_at"]
+
+
+def test_send_ready_limits_to_ids(monkeypatch):
+    sent = _fake_gmail(monkeypatch)
+    a, b, c = _ready("A"), _ready("B"), _ready("C")
+    service.send_ready([c, a], pace=0)
+    assert sorted(sent) == ["subj A", "subj C"]
+
+
+def test_send_ready_never_sends_twice(monkeypatch):
+    sent = _fake_gmail(monkeypatch)
+    a, b = _ready("A"), _ready("B")
+
+    def progress(counts, current):
+        if current == "A":
+            db.mark_sent(b, "m0", "t0")      # B sent from the drawer meanwhile
+    counts = service.send_ready(pace=0, on_progress=progress)
+    assert sent == ["subj A"]
+    assert counts["sent"] == 1 and counts["skipped"] == 1
+
+
+def test_send_ready_aborts_after_consecutive_failures(monkeypatch):
+    names = [f"C{n}" for n in range(5)]
+    _fake_gmail(monkeypatch, fail_for={f"subj {n}" for n in names})
+    for n in names:
+        _ready(n)
+    counts = service.send_ready(pace=0)
+    assert counts["failed"] == service.SEND_MAX_CONSECUTIVE_ERRORS
+    assert counts["aborted"] is True and "gmail down" in counts["last_error"]
+
+
+def test_start_send_ready_async_needs_gmail(monkeypatch):
+    from prospector import gmailer
+
+    def not_connected():
+        raise gmailer.GmailNotConfigured("connect Gmail")
+    monkeypatch.setattr(gmailer, "ensure_authorized", not_connected)
+    with pytest.raises(gmailer.GmailNotConfigured):
+        service.start_send_ready_async()
+    assert not service.send_job_status().get("running")
+
+
+def test_start_send_ready_async_runs_job(monkeypatch):
+    from prospector import gmailer
+    monkeypatch.setattr(gmailer, "ensure_authorized", lambda: None)
+    sent = _fake_gmail(monkeypatch)
+    monkeypatch.setattr(service, "SEND_PACE_SECONDS", 0)
+    a = _ready("A")
+    status = service.start_send_ready_async([a])
+    assert status["running"] is True
+    _wait_until(lambda: not service.send_job_status()["running"])
+    final = service.send_job_status()
+    assert final["sent"] == 1 and final["error"] is None and sent == ["subj A"]

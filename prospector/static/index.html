@@ -610,6 +610,8 @@
         <span class="draft-prog" id="draftProgress"></span>
         <span style="flex:1"></span>
         <button class="icon-btn primary" id="draftNowBtn" title="Write and review emails for the ticked companies, or the whole queue if none are ticked (nothing is sent)">✎ Draft all</button>
+        <span class="draft-prog" id="sendProgress"></span>
+        <button class="icon-btn" id="sendAllBtn" title="Send the drafts of the ticked companies, or every draft that's ready to send if none are ticked (asks first)">➤ Send all</button>
       </div>
       <div class="scroll"><table class="otable oqueue">
         <thead><tr><th class="pick"><input type="checkbox" id="o-pick-all" title="Select all unsent"></th><th class="sortable" data-sort="company">Company</th><th class="sortable" data-sort="contact">Contact</th><th class="sortable" data-sort="draft">Draft</th><th class="sortable" data-sort="sent">Last sent</th><th class="sortable" data-sort="reply">Reply</th></tr></thead>
@@ -747,6 +749,8 @@ async function loadOutreach(){
   // Pick up a job already running (e.g. started before a reload).
   fetch("/api/outreach/draft-status").then(r=>r.json()).then(j => {
     drawDraftJob(j); if (j.running || j.locked_elsewhere) watchDraftJob(); }).catch(()=>{});
+  fetch("/api/outreach/send-status").then(r=>r.json()).then(j => {
+    drawSendJob(j); if (j.running) watchSendJob(); }).catch(()=>{});
   let s;
   try { s = await fetch("/api/outreach").then(r=>r.json()); }
   catch { toast("Couldn't load outreach stats."); return; }
@@ -787,8 +791,11 @@ function drawPicks(){
   all.disabled = !pickable.length;
   const btn = $("#draftNowBtn");
   if (!btn.textContent.includes("Drafting")) btn.textContent = draftLabel();
+  const send = $("#sendAllBtn");
+  if (!send.textContent.includes("Sending")) send.textContent = sendLabel();
 }
 const draftLabel = () => picked.size ? `✎ Draft ${picked.size} selected` : "✎ Draft all";
+const sendLabel = () => picked.size ? `➤ Send ${picked.size} selected` : "➤ Send all";
 $("#o-pick-all").onclick = e => {
   e.stopPropagation();
   const on = e.target.checked;
@@ -918,6 +925,59 @@ async function watchDraftJob(started = false){
     else if (!j.total) toast("Nothing to draft — every marked company already has a reviewed draft.");
     else toast(`Drafted ${j.done}: ${j.ok} ready, ${j.blocked} blocked, ${j.failed} failed` + (j.aborted ? " (stopped early — endpoint down?)" : "") + ".");
   }, 2500);
+}
+
+// "Send all" / "Send N selected": sends the drafts that are ready to send —
+// the ticked ones, or all of them — after a confirm, as a server-side job whose
+// progress is polled like drafting. Ticked rows that aren't ready are skipped.
+let sendPoll = null;
+$("#sendAllBtn").onclick = async () => {
+  const ready = activeRows.filter(r => r.status === "ready" && (!picked.size || picked.has(r.id)));
+  if (!ready.length){
+    toast(picked.size ? "None of the selected companies is ready to send." : "Nothing is ready to send.");
+    return;
+  }
+  const skip = picked.size ? picked.size - ready.length : 0;
+  if (!confirm(`Send ${plural(ready.length, "email", "emails")} now from Gmail?` +
+      (skip ? `\n${plural(skip, "selected company isn't", "selected companies aren't")} ready to send and will be skipped.` : "") +
+      "\nThis can't be undone.")) return;
+  const btn = $("#sendAllBtn"); btn.disabled = true;
+  try {
+    const res = await fetch("/api/outreach/send-ready", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({ ids: ready.map(r => r.id) })});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    picked.clear(); drawPicks();
+    document.querySelectorAll("#o-active .pick input").forEach(c => c.checked = false);
+    drawSendJob(await res.json());
+    watchSendJob(true);
+  } catch (e){ toast("Couldn't start sending: " + e.message); btn.disabled = false; }
+};
+function drawSendJob(j){
+  const prog = $("#sendProgress"), btn = $("#sendAllBtn");
+  prog.classList.toggle("on", !!j.running);
+  if (j.running){
+    btn.disabled = true; btn.textContent = "➤ Sending…";
+    prog.textContent = j.total ? `${j.done}/${j.total}${j.current ? " · " + j.current : ""}` : "starting…";
+  } else {
+    btn.disabled = false; btn.textContent = sendLabel(); prog.textContent = "";
+  }
+}
+function watchSendJob(started = false){
+  clearInterval(sendPoll);
+  let lastDone = -1, ours = started;
+  sendPoll = setInterval(async () => {
+    let j; try { j = await fetch("/api/outreach/send-status").then(r=>r.json()); } catch { return; }
+    drawSendJob(j);
+    if (j.done !== lastDone){ lastDone = j.done; loadActive(); }
+    if (j.running){ ours = true; return; }
+    clearInterval(sendPoll);
+    loadOutreach();                          // sent counters + pipeline
+    if (!ours) return;
+    if (j.error) toast("Sending failed: " + j.error);
+    else toast(`Sent ${j.sent} of ${j.total}` + (j.skipped ? `, ${j.skipped} already sent` : "") +
+               (j.failed ? `, ${j.failed} failed — ${j.last_error}` : "") +
+               (j.aborted ? " (stopped early — Gmail down?)" : "") + ".");
+  }, 2000);
 }
 
 // Drafts that failed the review or rule checks, with reasons. Rule chips count
