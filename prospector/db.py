@@ -659,6 +659,23 @@ def queued_needing_draft(limit: int | None = 10) -> list[dict]:
     return work
 
 
+def prospects_to_draft(ids: list[int]) -> list[dict]:
+    """The hand-picked worklist for "Draft selected": those of `ids` that are
+    unsent, successfully researched prospects, oldest mark first. All get a full
+    (re)draft — picking one is an explicit ask, even if it already has a draft.
+    Same shape as queued_needing_draft."""
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT id, company FROM prospects WHERE id IN ({marks}) "
+            "AND sent_at IS NULL AND error IS NULL ORDER BY queued_at, id",
+            list(ids),
+        ).fetchall()
+    return [{"id": r["id"], "company": r["company"], "drafted": False} for r in rows]
+
+
 def blocked_drafts() -> dict:
     """Unsent drafts that failed review, with why — for manual analysis.
 

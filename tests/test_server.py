@@ -400,3 +400,8 @@ def test_draft_queued_endpoints(client, monkeypatch):
     monkeypatch.setattr(service, "start_draft_queued_async", lambda: {"running": True})
     assert client.post("/api/outreach/draft-queued").json() == {"running": True}
     assert "running" in client.get("/api/outreach/draft-status").json()
+    got = {}
+    monkeypatch.setattr(service, "start_draft_queued_async",
+                        lambda ids=None: got.update(ids=ids) or {"running": True})
+    client.post("/api/outreach/draft-queued", json={"ids": [3, 5]})
+    assert got["ids"] == [3, 5]                     # "Draft selected"

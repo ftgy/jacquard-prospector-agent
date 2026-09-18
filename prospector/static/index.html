@@ -365,6 +365,8 @@
   .otable .rep { color: var(--tier-a); font-weight: 600; font-size: 12px; white-space: nowrap; }
   .otable .wait { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .otable td.empty { color: var(--muted); font-size: 12px; cursor: default; }
+  .otable .pick { width: 1%; padding-right: 0; }
+  .otable .pick input { cursor: pointer; accent-color: var(--accent); width: 15px; height: 15px; vertical-align: middle; }
   .oqueue .qstat.sent { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
   .drawer.email-only .dhead .fit, .drawer.email-only .dfoot { display: none; }
   .draft-prog { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
@@ -596,10 +598,10 @@
         <h2>Active contacts</h2>
         <span class="draft-prog" id="draftProgress"></span>
         <span style="flex:1"></span>
-        <button class="icon-btn primary" id="draftNowBtn" title="Write and review emails for marked companies (nothing is sent)">✎ Draft all</button>
+        <button class="icon-btn primary" id="draftNowBtn" title="Write and review emails for the ticked companies, or the whole queue if none are ticked (nothing is sent)">✎ Draft all</button>
       </div>
       <div class="scroll"><table class="otable oqueue">
-        <thead><tr><th>Company</th><th>Contact</th><th>Draft</th><th>Last sent</th><th>Reply</th></tr></thead>
+        <thead><tr><th class="pick"><input type="checkbox" id="o-pick-all" title="Select all unsent"></th><th>Company</th><th>Contact</th><th>Draft</th><th>Last sent</th><th>Reply</th></tr></thead>
         <tbody id="o-active"></tbody>
       </table></div>
     </div>
@@ -745,13 +747,37 @@ async function loadGmailStatus(){
 
 const QUEUE_LABEL = { ready: "ready to send", "needs-review": "⚠ check draft",
   "no-contact": "no contact", waiting: "waiting for draft", sent: "✉ sent" };
+// Ticked unsent companies: "Draft all" becomes "Draft N selected". Kept across
+// table refreshes; ids that got sent or left the list drop out.
+const picked = new Set();
+let pickable = [];
+function drawPicks(){
+  const all = $("#o-pick-all"), n = pickable.filter(id => picked.has(id)).length;
+  all.checked = n > 0 && n === pickable.length;
+  all.indeterminate = n > 0 && n < pickable.length;
+  all.disabled = !pickable.length;
+  const btn = $("#draftNowBtn");
+  if (!btn.textContent.includes("Drafting")) btn.textContent = draftLabel();
+}
+const draftLabel = () => picked.size ? `✎ Draft ${picked.size} selected` : "✎ Draft all";
+$("#o-pick-all").onclick = e => {
+  e.stopPropagation();
+  const on = e.target.checked;
+  pickable.forEach(id => on ? picked.add(id) : picked.delete(id));
+  document.querySelectorAll("#o-active .pick input").forEach(c => c.checked = on);
+  drawPicks();
+};
+
 async function loadActive(){
   const host = $("#o-active");
   let q; try { q = await fetch("/api/outreach/active").then(r=>r.json()); } catch { return; }
   host.innerHTML = "";
   $("#cnt-queue").textContent = q.filter(r => r.status !== "sent").length || "";
+  pickable = q.filter(r => r.status !== "sent").map(r => r.id);
+  for (const id of [...picked]) if (!pickable.includes(id)) picked.delete(id);
+  drawPicks();
   if (!q.length){
-    host.appendChild(el("tr", null, "<td class='empty' colspan='5'>Nothing here yet — mark companies “to contact” with the ☆ in the research tables.</td>"));
+    host.appendChild(el("tr", null, "<td class='empty' colspan='6'>Nothing here yet — mark companies “to contact” with the ☆ in the research tables.</td>"));
     return;
   }
   for (const r of q){
@@ -761,25 +787,39 @@ async function loadActive(){
     const reply = r.replied_at ? `<span class="rep" title="Replied ${esc(r.replied_at.slice(0,10))}">↩ replied</span>`
                 : r.sent_at ? `<span class="wait">awaiting</span>` : `<span class="wait">—</span>`;
     tr.innerHTML = `
+      <td class="pick"></td>
       <td class="co">${esc(r.company)}<span class="line">${esc(r.subject || "")}</span></td>
       <td><span class="to">${esc(r.contact_email || "—")}</span></td>
       <td><span class="qstat ${esc(r.status)}">${esc(QUEUE_LABEL[r.status] || r.status)}</span>${
         r.fixes && r.status !== "sent" ? `<span class="fixes">${esc(plural(r.fixes, "fix", "fixes"))}</span>` : ""}</td>
       <td>${sent}</td>
       <td>${reply}</td>`;
+    if (r.status !== "sent"){
+      const cb = el("input"); cb.type = "checkbox"; cb.checked = picked.has(r.id);
+      cb.title = "Select to draft";
+      cb.onclick = e => { e.stopPropagation(); cb.checked ? picked.add(r.id) : picked.delete(r.id); drawPicks(); };
+      const cell = tr.querySelector("td.pick");
+      cell.onclick = e => { if (e.target === cell){ e.stopPropagation(); cb.click(); } };  // easier target
+      cell.appendChild(cb);
+    }
     tr.onclick = () => openDrawer(r.id, {emailOnly: true});
     host.appendChild(tr);
   }
 }
 
-// "Draft all": runs the auto-draft job server-side, polling its progress and
-// refreshing the queue + blocked lists as each email lands.
+// "Draft all" / "Draft N selected": runs the auto-draft job server-side over the
+// whole queue or just the ticked companies, polling its progress and refreshing
+// the queue + blocked lists as each email lands.
 let draftPoll = null;
 $("#draftNowBtn").onclick = async () => {
   const btn = $("#draftNowBtn"); btn.disabled = true;
+  const ids = [...picked];
   try {
-    const res = await fetch("/api/outreach/draft-queued", {method:"POST"});
+    const res = await fetch("/api/outreach/draft-queued", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(ids.length ? { ids } : {})});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
+    picked.clear(); drawPicks();
+    document.querySelectorAll("#o-active .pick input").forEach(c => c.checked = false);
     drawDraftJob(await res.json());
     watchDraftJob(true);
   } catch (e){ toast("Couldn't start drafting: " + e.message); btn.disabled = false; }
@@ -791,7 +831,7 @@ function drawDraftJob(j){
     btn.disabled = true; btn.textContent = "✎ Drafting…";
     prog.textContent = j.total ? `${j.done}/${j.total}${j.current ? " · " + j.current : ""}` : "starting…";
   } else {
-    btn.disabled = !!j.locked_elsewhere; btn.textContent = "✎ Draft all";
+    btn.disabled = !!j.locked_elsewhere; btn.textContent = draftLabel();
     prog.textContent = j.locked_elsewhere ? "a cron/terminal draft run is in progress" : "";
   }
 }

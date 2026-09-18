@@ -82,6 +82,11 @@ class QueueRequest(BaseModel):
     queued: bool
 
 
+class DraftRequest(BaseModel):
+    # Prospect ids to draft ("Draft selected"). Omitted -> the whole queue.
+    ids: list[int] | None = Field(None, max_length=500)
+
+
 class SendRequest(BaseModel):
     # The edited subject/body to send. Omitted -> send the stored draft as-is.
     subject: str | None = Field(None, max_length=500)
@@ -227,14 +232,16 @@ def api_outreach():
 
 
 @app.post("/api/outreach/draft-queued")
-def api_draft_queued():
+def api_draft_queued(req: DraftRequest | None = None):
     """Start drafting emails for the "to contact" queue in the background (the
     same job as scripts/draft_queued.py, but with no limit: it runs until the
-    queue is empty). Returns the job status; poll
+    queue is empty). Optional body {ids: [...]} drafts just those prospects.
+    Returns the job status; poll
     GET /api/outreach/draft-status. 409 if a draft run is already going."""
     from .service import start_draft_queued_async
     try:
-        return start_draft_queued_async()
+        ids = (req or DraftRequest()).ids
+        return start_draft_queued_async(ids=ids) if ids else start_draft_queued_async()
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     except SystemExit as e:  # make_client() with no API key

@@ -575,6 +575,26 @@ def test_draft_queued_without_limit_runs_until_queue_empty(monkeypatch):
                       "aborted": False}
 
 
+def test_draft_queued_with_ids_redrafts_just_those(monkeypatch):
+    a, b, c = (db.insert_prospect(make_record(n)) for n in "ABC")
+    sent = db.insert_prospect(make_record("Sent"))
+    for pid in (a, b, c, sent):
+        db.set_queued(pid, True)
+    db.set_prospect_email(b, "old", "body", "spanish")   # already drafted: redrafted anyway
+    db.mark_sent(sent, "m", "t")
+    calls = []
+
+    def fake_draft(pid, client=None):
+        calls.append(pid)
+        return {"review": {"issues": [], "remaining": [], "error": None}}
+
+    monkeypatch.setattr(service, "draft_email_for", fake_draft)
+    monkeypatch.setattr(service, "review_email_for", lambda *a, **k: pytest.fail("review-only"))
+    counts = service.draft_queued(None, client=FakeClient(), pace=0, ids=[b, sent, a])
+    assert calls == [a, b]                  # sent one skipped; C not picked; one pass
+    assert counts["total"] == counts["done"] == counts["ok"] == 2
+
+
 def test_start_draft_queued_async_refuses_when_locked():
     lock = service.acquire_draft_lock()
     try:
@@ -589,7 +609,7 @@ def test_start_draft_queued_async_refuses_when_locked():
 def test_start_draft_queued_async_runs_job(monkeypatch):
     import time as _time
     monkeypatch.setattr(service, "draft_queued",
-                        lambda limit, client=None, on_progress=None:
+                        lambda limit, client=None, on_progress=None, ids=None:
                         on_progress({"total": 0, "done": 0, "ok": 0, "blocked": 0,
                                      "failed": 0, "aborted": False}, None))
     status = service.start_draft_queued_async(client=FakeClient())

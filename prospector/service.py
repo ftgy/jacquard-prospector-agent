@@ -404,7 +404,8 @@ def release_draft_lock(fh) -> None:
 
 
 def draft_queued(limit: int | None = 10, client: anthropic.Anthropic | None = None,
-                 log=None, on_progress=None, pace: float = DRAFT_PACE_SECONDS) -> dict:
+                 log=None, on_progress=None, pace: float = DRAFT_PACE_SECONDS,
+                 ids: list[int] | None = None) -> dict:
     """Draft + review emails for up to `limit` queued prospects. Caller holds the lock.
 
     Never-drafted prospects get a full draft (draft_email_for); ones whose review
@@ -415,13 +416,17 @@ def draft_queued(limit: int | None = 10, client: anthropic.Anthropic | None = No
     per prospect; `on_progress(counts, current)` is called before each prospect
     and once at the end with current=None. A burst of consecutive failures
     (including failed reviews — usually the Anthropic side being down) aborts the
-    run. Returns {'total','done','ok','blocked','failed','aborted'}; 'blocked'
-    drafts were stored but failed review or rule checks.
+    run. `ids` drafts exactly those prospects instead (one pass, full redraft
+    each — see db.prospects_to_draft), ignoring `limit`. Returns {'total','done',
+    'ok','blocked','failed','aborted'}; 'blocked' drafts were stored but failed
+    review or rule checks.
     """
     log = log or (lambda level, msg: None)
     tried: set[int] = set()
 
     def next_work() -> list[dict]:
+        if ids is not None:
+            return [] if tried else db.prospects_to_draft(ids)
         if limit is not None:
             return db.queued_needing_draft(limit)
         return [w for w in db.queued_needing_draft(None) if w["id"] not in tried]
@@ -480,8 +485,10 @@ def draft_queued(limit: int | None = 10, client: anthropic.Anthropic | None = No
 
 
 def start_draft_queued_async(limit: int | None = None,
-                             client: anthropic.Anthropic | None = None) -> dict:
-    """Run draft_queued on a background thread for the dashboard. Returns the
+                             client: anthropic.Anthropic | None = None,
+                             ids: list[int] | None = None) -> dict:
+    """Run draft_queued on a background thread for the dashboard — the whole
+    queue, or just `ids` when given ("Draft selected"). Returns the
     initial job status. Raises RuntimeError if a draft run (this process's, or a
     cron/terminal one) is already going, SystemExit if the API key is missing."""
     with _draft_job_guard:
@@ -506,7 +513,7 @@ def start_draft_queued_async(limit: int | None = None,
 
     def work():
         try:
-            draft_queued(limit, client=client, on_progress=progress)
+            draft_queued(limit, client=client, on_progress=progress, ids=ids)
         except Exception as e:  # unexpected — surface it instead of a stuck job
             _draft_job["error"] = friendly_api_error(e)
         finally:
