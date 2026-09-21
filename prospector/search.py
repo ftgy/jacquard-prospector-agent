@@ -13,7 +13,7 @@ don't apply to it.
 
 Configure in .env:
     SEARCH_BACKEND=gemini|anthropic   (default: gemini when behind a proxy)
-    SEARCH_MODEL=gemini-3.5-flash
+    SEARCH_MODEL=gemini-3.7-flash
 """
 
 import os
@@ -30,7 +30,7 @@ def get_search_backend() -> str:
 
 
 def get_search_model() -> str:
-    return os.environ.get("SEARCH_MODEL", "gemini-3.5-flash")
+    return os.environ.get("SEARCH_MODEL", "gemini-3.7-flash")
 
 
 def _openai_client() -> OpenAI:

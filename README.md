@@ -43,7 +43,7 @@ ANTHROPIC_BASE_URL=http://192.168.132.144:4000
 ANTHROPIC_API_KEY=<your LiteLLM virtual key>   # NOT an sk-ant-... key
 PROSPECT_MODEL=vertex_ai/claude-opus-4-8       # LiteLLM's name for the model
 SEARCH_BACKEND=gemini                          # see "How search works" below
-SEARCH_MODEL=gemini-3.5-flash
+SEARCH_MODEL=gemini-3.7-flash
 ```
 
 **Option B — Anthropic direct.** Leave `ANTHROPIC_BASE_URL` unset and use a real
