@@ -61,7 +61,7 @@ def test_url_in_body_is_flagged_but_not_signature():
 
 
 def test_long_email_and_long_sentence_are_flagged():
-    long_sentence = " ".join(["palabra"] * 40) + "."
+    long_sentence = " ".join(["palabra"] * 60) + "."
     b = body(observation=" ".join([long_sentence] * 5))
     assert {"length", "long-sentence"} <= rules(lint_email(SUBJECT, b))
 

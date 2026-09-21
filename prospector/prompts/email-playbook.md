@@ -76,12 +76,12 @@ sentences, the felt question, and the self-intro):
   se va el tiempo"). Let the observation and the guess breathe over a couple of
   clauses instead of collapsing into one dense sentence. Never drop the self-intro
   to save words.
-- **Keep sentences short — split, don't stack.** In a cold email every word competes
-  with the reader's patience, and a 40-plus-word sentence loses them. Never pack the
-  observation *and* the region list *and* the systems *and* the guess into one
-  breathless sentence. Aim for ~20 words per sentence; break anything longer into two
-  or three. State the observation in one sentence, the guess in the next, the felt
-  question in its own. Short sentences read as confident; long ones read as anxious.
+- **Don't stack everything into one sentence.** A long sentence is fine — it can
+  wander through a couple of clauses and still read like a person thinking out loud.
+  What loses the reader is packing the observation *and* the region list *and* the
+  systems *and* the guess into one breathless sentence. Keep the observation, the
+  guess and the felt question as separate thoughts; how long each one runs is your
+  call. Only break a sentence when it has stopped being one thought.
 - **Guess, don't diagnose.** Anything you didn't directly observe is a hypothesis,
   so frame it as one ("imagino que…", "supongo que…", "me da la impresión de que…").
   Never state an inference as fact, never tell

@@ -24,8 +24,9 @@ ASK_OPENER = {"spanish": "¿Os cuadra agendar una llamada de 20 minutos para"}
 # without the signature block. A follow-up is a short nudge (followup-playbook).
 MAX_WORDS = 180
 MAX_FOLLOWUP_WORDS = 90
-# Playbook asks for ~20 words per sentence; flag only the clearly runaway ones.
-MAX_SENTENCE_WORDS = 35
+# The playbook allows long sentences; flag only a sentence that has clearly stopped
+# being one thought.
+MAX_SENTENCE_WORDS = 55
 
 _BANNED = {
     "spanish": [
