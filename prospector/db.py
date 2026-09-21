@@ -934,6 +934,44 @@ def set_prospect_contact(prospect_id: int, email: str, phone: str | None = None,
             "source": source, "found_at": ts}
 
 
+def edit_prospect_contact(prospect_id: int, email: str | None,
+                          phone: str | None = None,
+                          website: str | None = None) -> dict | None:
+    """Store hand-edited contact details (the drawer's contact form), returning
+    the stored dict. An empty email clears the contact altogether, so the
+    prospect goes back to "no contact"; blank phone/website are stored as NULL.
+
+    The source URL only vouches for the address that was found there, so it's
+    kept while the address is unchanged and dropped otherwise.
+    Raises LookupError if there's no such prospect.
+    """
+    email = (email or "").strip() or None
+    phone = (phone or "").strip() or None
+    website = (website or "").strip() or None
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT contact_email, contact_source FROM prospects WHERE id=?",
+            (prospect_id,),
+        ).fetchone()
+        if row is None:
+            raise LookupError("prospect not found")
+        if not email:
+            conn.execute(
+                "UPDATE prospects SET contact_email=NULL, contact_phone=NULL, "
+                "contact_website=NULL, contact_source=NULL, contact_at=NULL "
+                "WHERE id=?", (prospect_id,))
+            return None
+        source = row["contact_source"] if email == row["contact_email"] else None
+        ts = _now()
+        conn.execute(
+            "UPDATE prospects SET contact_email=?, contact_phone=?, "
+            "contact_website=?, contact_source=?, contact_at=? WHERE id=?",
+            (email, phone, website, source, ts, prospect_id),
+        )
+    return {"email": email, "phone": phone, "website": website,
+            "source": source, "found_at": ts}
+
+
 def set_scheduled(prospect_id: int, scheduled_at: str, job_id: int) -> bool:
     """Record that this draft is queued on the scheduler for `scheduled_at`."""
     with _connect() as conn:

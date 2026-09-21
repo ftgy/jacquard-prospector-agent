@@ -11,6 +11,7 @@ Run it:
   uvicorn server:app --reload      # dev autoreload
 """
 
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -25,6 +26,10 @@ from .config import describe_target, load_env, make_client
 
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
+
+# Loose sanity check on a hand-typed address — enough to catch a typo'd or
+# half-pasted one, not a spec-complete validation.
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 
 
 @asynccontextmanager
@@ -107,6 +112,13 @@ class SendRequest(BaseModel):
     # The edited subject/body to send. Omitted -> send the stored draft as-is.
     subject: str | None = Field(None, max_length=500)
     body: str | None = Field(None, max_length=20000)
+
+
+class ContactEditRequest(BaseModel):
+    # The drawer's hand-edited contact details. An empty email clears the contact.
+    email: str = Field("", max_length=320)
+    phone: str | None = Field(None, max_length=120)
+    website: str | None = Field(None, max_length=500)
 
 
 class ScheduleRequest(BaseModel):
@@ -300,6 +312,21 @@ def api_find_contact(prospect_id: int):
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, friendly_api_error(e))
+
+
+@app.put("/api/prospects/{prospect_id}/contact")
+def api_edit_contact(prospect_id: int, req: ContactEditRequest):
+    """Hand-edit where the outreach goes (the drawer's contact form), for when
+    the search got it wrong or found nothing. An empty email clears the contact.
+    Returns {id, contact}, shaped like the search's answer."""
+    email = req.email.strip()
+    if email and not EMAIL_RE.match(email):
+        raise HTTPException(400, f"“{email}” doesn't look like an email address")
+    try:
+        contact = db.edit_prospect_contact(prospect_id, email, req.phone, req.website)
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    return {"id": prospect_id, "contact": contact}
 
 
 @app.post("/api/prospects/{prospect_id}/send")

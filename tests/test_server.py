@@ -144,6 +144,51 @@ def test_find_contact_missing_prospect_404(client):
     assert client.post("/api/prospects/9999/contact").status_code == 404
 
 
+def test_edit_contact_endpoint(client):
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_contact(pid, "info@acme.es", website="acme.es",
+                            source="https://acme.es/contacto")
+    # A corrected address drops the source that vouched for the old one.
+    r = client.put(f"/api/prospects/{pid}/contact",
+                   json={"email": " ana@acme.es ", "phone": "+34 600 111 222",
+                         "website": "acme.es"})
+    assert r.status_code == 200
+    c = r.json()["contact"]
+    assert c["email"] == "ana@acme.es" and c["phone"] == "+34 600 111 222"
+    assert c["source"] is None
+    # Editing around an unchanged address keeps it.
+    kept = db.set_prospect_contact(pid, "ana@acme.es", source="https://acme.es/equipo")
+    assert kept["source"] == "https://acme.es/equipo"
+    r = client.put(f"/api/prospects/{pid}/contact",
+                   json={"email": "ana@acme.es", "phone": "", "website": ""})
+    assert r.json()["contact"] == {"email": "ana@acme.es", "phone": None,
+                                   "website": None,
+                                   "source": "https://acme.es/equipo",
+                                   "found_at": r.json()["contact"]["found_at"]}
+
+
+def test_edit_contact_clears_it(client):
+    pid = db.insert_prospect(make_record("Acme"))
+    db.set_prospect_contact(pid, "info@acme.es")
+    r = client.put(f"/api/prospects/{pid}/contact", json={"email": ""})
+    assert r.status_code == 200 and r.json()["contact"] is None
+    # With no address the draft can't be sent: it's back to "no contact".
+    db.set_prospect_email(pid, "Subject", "Body")
+    db.set_draft_approved(pid, True)
+    assert db.get_prospect(pid)["draft_status"] == "no-contact"
+
+
+def test_edit_contact_rejects_a_bad_address(client):
+    pid = db.insert_prospect(make_record("Acme"))
+    r = client.put(f"/api/prospects/{pid}/contact", json={"email": "ana@acme"})
+    assert r.status_code == 400
+
+
+def test_edit_contact_missing_prospect_404(client):
+    assert client.put("/api/prospects/9999/contact",
+                      json={"email": "ana@acme.es"}).status_code == 404
+
+
 def test_find_contact_api_failure_502(client, monkeypatch):
     from prospector import service
 
