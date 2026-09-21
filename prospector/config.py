@@ -115,6 +115,31 @@ def email_review_enabled() -> bool:
     return os.environ.get("EMAIL_REVIEW", "on").strip().lower() not in ("off", "0", "false")
 
 
+def get_scheduler_url() -> str | None:
+    """Base URL of the prospector-scheduler service, or None if not configured.
+
+    The Gmail API can't schedule a send, so "send this on Monday at 10:00" is
+    handed to that always-on service instead (see the prospector-scheduler repo).
+    Without SCHEDULER_URL the dashboard just hides the scheduling controls and
+    everything else works as before.
+    """
+    return os.environ.get("SCHEDULER_URL", "").strip().rstrip("/") or None
+
+
+def get_scheduler_token() -> str:
+    """Shared secret for the scheduler API — must match its SCHEDULER_TOKEN."""
+    return os.environ.get("SCHEDULER_TOKEN", "").strip()
+
+
+def scheduler_enabled() -> bool:
+    """Whether scheduling is available: both the URL and the token are set.
+
+    A URL without a token would 401 on every call, so treat that as off rather
+    than showing controls that can't work.
+    """
+    return bool(get_scheduler_url() and get_scheduler_token())
+
+
 def get_followup_days() -> list[int]:
     """The follow-up schedule: how many days after each email the next follow-up
     is due, one entry per follow-up. FOLLOWUP_DAYS=4,7 (the default) means the

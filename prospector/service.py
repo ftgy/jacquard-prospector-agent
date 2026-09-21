@@ -300,7 +300,7 @@ def save_email_edits(prospect_id: int, subject: str, body: str) -> dict:
     Like redraft_subject_for, refreshes the stored review's `remaining` rule
     findings so the Pipeline status tracks the edited text. Returns
     {'subject', 'body', 'remaining'}. Raises LookupError if the prospect is
-    gone, ValueError if there's no draft yet.
+    gone, ValueError if there's no draft yet or it's already scheduled.
     """
     rec = db.get_prospect(prospect_id)
     if rec is None:
@@ -308,6 +308,10 @@ def save_email_edits(prospect_id: int, subject: str, body: str) -> dict:
     email = rec.get("email")
     if not email:
         raise ValueError("No drafted email yet — draft one first.")
+    if email.get("scheduled_at"):
+        # The scheduler holds its own copy of the text. Saving here would show
+        # the edit while the old words are what actually go out.
+        raise ValueError("This email is scheduled — cancel the schedule to edit it.")
     db.set_email_text(prospect_id, subject, body)
     remaining = lint_email(subject, body, email.get("language") or get_output_language(),
                            followup=bool(email.get("followup")))
@@ -728,6 +732,158 @@ def send_outreach(prospect_id: int, subject: str | None = None,
         "sent_at": (updated.get("email") or {}).get("sent_at"),
         "thread_id": sent["thread_id"],
     }
+
+
+# --- Scheduled sends (via the prospector-scheduler service) ------------------
+#
+# The Gmail API can't schedule, so a draft that shouldn't go out now is frozen
+# and handed to an always-on service that sends it at its moment. The prospect
+# database stays ours: we record the schedule, and a later reconcile pass turns
+# a finished job into a normal send.
+
+
+def schedule_outreach(prospect_id: int, send_at: str) -> dict:
+    """Freeze a prospect's draft and queue it on the scheduler for `send_at`.
+
+    Same preconditions as send_outreach — a draft, a contact address, and (for a
+    follow-up) no reply yet — checked here so a bad schedule fails now rather
+    than silently at 10:00 on Monday. Returns {'id', 'scheduled_at', 'job_id'}.
+
+    Raises LookupError if the prospect is gone, ValueError if it can't be sent,
+    and scheduler.SchedulerUnavailable if the service can't be reached.
+    """
+    from . import scheduler
+
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    email = rec.get("email")
+    if not email:
+        raise ValueError("No drafted email to schedule — generate one first.")
+    if email.get("scheduled_at"):
+        raise ValueError("Already scheduled — cancel it first to reschedule.")
+    to = (email.get("contact") or {}).get("email")
+    if not to:
+        raise ValueError("No contact address — use “Find contact” first.")
+    subject, body = email.get("subject", ""), email.get("body", "")
+    if not body.strip():
+        raise ValueError("The email body is empty — nothing to schedule.")
+
+    when = _utc_iso(send_at)
+    if when <= _now_iso():
+        raise ValueError("That time has already passed — pick a future one.")
+
+    sends = _followup_sends(rec)
+    if sends and rec.get("replied_at"):
+        raise ValueError("They replied — the follow-up wasn't scheduled.")
+    thread_id = sends[0].get("thread_id") if sends else None
+
+    job = scheduler.queue(
+        to=to, subject=subject, body=body, send_at=when, thread_id=thread_id,
+        # A follow-up to someone who answers over the weekend must not go out.
+        skip_if_replied=bool(thread_id),
+        # Same prospect, same moment, same job — a retried request can't queue
+        # a second copy of the email.
+        idempotency_key=f"prospect-{prospect_id}-{when}",
+    )
+    db.set_scheduled(prospect_id, when, job["id"])
+    return {"id": prospect_id, "scheduled_at": when, "job_id": job["id"]}
+
+
+def unschedule_outreach(prospect_id: int) -> dict:
+    """Withdraw a queued send, so the draft is editable and sendable again.
+
+    Raises ValueError if the prospect isn't scheduled, LookupError if it's gone,
+    and SchedulerUnavailable if the job can't be cancelled — including when it
+    has already gone out, which must not be reported as cancelled.
+    """
+    from . import scheduler
+
+    rec = db.get_prospect(prospect_id)
+    if rec is None:
+        raise LookupError("prospect not found")
+    email = rec.get("email") or {}
+    job_id = email.get("scheduler_job_id")
+    if not email.get("scheduled_at") or not job_id:
+        raise ValueError("That email isn't scheduled.")
+
+    scheduler.cancel(job_id)          # raises if it already went out
+    db.clear_scheduled(prospect_id)
+    return {"id": prospect_id, "scheduled_at": None}
+
+
+def reconcile_scheduled() -> dict:
+    """Ask the scheduler what became of every queued send, and record it.
+
+    This is how a scheduled email becomes a normal one: a job reporting 'sent'
+    is written through db.mark_sent with the Gmail ids it carried back and the
+    moment it actually went out — so the row lands in Sent and the follow-up
+    schedule counts from the right date.
+
+    A job that was skipped or failed clears the schedule and leaves the draft in
+    To do, where it shows its reason; the email hasn't gone, so it stays sendable.
+
+    Returns {'checked', 'sent', 'skipped', 'failed', 'pending', 'notes'}. One
+    unreadable job doesn't abort the sweep.
+    """
+    from . import scheduler
+
+    worklist = db.scheduled_prospects()
+    counts = {"checked": len(worklist), "sent": 0, "skipped": 0, "failed": 0,
+              "pending": 0, "notes": []}
+    for item in worklist:
+        try:
+            job = scheduler.get(item["job_id"]) if item["job_id"] else None
+        except scheduler.SchedulerUnavailable:
+            # The box is down: leave the schedule alone and try again later.
+            # Reporting these as pending is honest — we simply don't know yet.
+            counts["pending"] += 1
+            continue
+        if job is None:
+            # The scheduler has no such job (pruned, or rebuilt from empty). The
+            # email may or may not have gone; say so rather than guess.
+            db.clear_scheduled(item["id"])
+            counts["failed"] += 1
+            counts["notes"].append(
+                f"{item['company']}: the scheduler lost job {item['job_id']} — "
+                "check Gmail before resending.")
+            continue
+
+        status = job.get("status")
+        if status == "pending":
+            counts["pending"] += 1
+        elif status == "sent":
+            db.mark_sent(item["id"], job["gmail_message_id"], job["gmail_thread_id"],
+                         subject=job.get("subject"), body=job.get("body"),
+                         contact_email=job.get("recipient"),
+                         sent_at=job.get("finished_at"))
+            counts["sent"] += 1
+        else:                                   # skipped, failed, canceled
+            db.clear_scheduled(item["id"])
+            counts["skipped" if status == "skipped" else "failed"] += 1
+            counts["notes"].append(
+                f"{item['company']}: {job.get('error') or status}")
+    return counts
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _utc_iso(value: str) -> str:
+    """Normalize a client timestamp to UTC ISO.
+
+    The dashboard sends the local time the user picked with its offset, so
+    "Monday 10:00" in Madrid arrives as 08:00Z. A value without an offset is
+    read as UTC rather than guessed at.
+    """
+    try:
+        dt = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"Not a valid date/time: {value!r}")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
 SEND_PACE_SECONDS = 2.0          # gap between sends (be gentle with Gmail)

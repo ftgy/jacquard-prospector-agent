@@ -109,6 +109,12 @@ class SendRequest(BaseModel):
     body: str | None = Field(None, max_length=20000)
 
 
+class ScheduleRequest(BaseModel):
+    # When to send, ISO 8601. The dashboard sends the picked local time with its
+    # offset ("2026-09-28T10:00:00+02:00"); a naive value is read as UTC.
+    send_at: str = Field(..., max_length=64)
+
+
 # --- prospects ---------------------------------------------------------------
 
 @app.get("/api/prospects")
@@ -317,6 +323,62 @@ def api_send_outreach(prospect_id: int, req: SendRequest | None = None):
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, friendly_api_error(e))
+
+
+@app.post("/api/prospects/{prospect_id}/schedule")
+def api_schedule_outreach(prospect_id: int, req: ScheduleRequest):
+    """Queue this prospect's draft to be sent at `send_at` by the scheduler.
+
+    The draft is frozen at this point: editing it is refused until the schedule
+    is cancelled. Returns {id, scheduled_at, job_id}.
+    """
+    from .scheduler import SchedulerUnavailable
+    from .service import schedule_outreach
+    try:
+        return schedule_outreach(prospect_id, req.send_at)
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except SchedulerUnavailable as e:
+        raise HTTPException(502, str(e))
+
+
+@app.delete("/api/prospects/{prospect_id}/schedule")
+def api_unschedule_outreach(prospect_id: int):
+    """Withdraw a queued send, making the draft editable and sendable again.
+
+    502 if the scheduler can't be reached or the email has already gone out —
+    either way we must not show it as cancelled.
+    """
+    from .scheduler import SchedulerUnavailable
+    from .service import unschedule_outreach
+    try:
+        return unschedule_outreach(prospect_id)
+    except LookupError:
+        raise HTTPException(404, "prospect not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except SchedulerUnavailable as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/scheduler/status")
+def api_scheduler_status():
+    """Whether scheduling is available, for the Outreach tab's controls."""
+    from . import scheduler
+    return scheduler.status()
+
+
+@app.post("/api/scheduler/reconcile")
+def api_reconcile_scheduled():
+    """Ask the scheduler what became of every queued send and record it.
+
+    This is what turns a scheduled email into a normal sent one. Never fails on
+    an unreachable scheduler — those jobs are simply reported as still pending.
+    """
+    from .service import reconcile_scheduled
+    return reconcile_scheduled()
 
 
 @app.get("/api/gmail/status")

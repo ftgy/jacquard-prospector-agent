@@ -107,6 +107,13 @@ def init_db() -> None:
                 draft_lang       TEXT,   -- language the next draft is written in
                 approved_at      TEXT,   -- draft approved by hand despite review findings
                 followup_at      TEXT,   -- the draft is an unsent follow-up (when drafted)
+                scheduled_at     TEXT,   -- the draft is queued to send then (UTC)
+                -- Its job on the scheduler service. TEXT, not INTEGER: the
+                -- migration below adds new columns as TEXT, so a fresh database
+                -- and an upgraded one would otherwise disagree on affinity and
+                -- hand back 12 in one and "12" in the other. Read it through
+                -- scheduler_job_id().
+                scheduler_job_id TEXT,
                 error            TEXT,
                 created_at       TEXT NOT NULL
             );
@@ -140,7 +147,8 @@ def init_db() -> None:
                     "email_lang", "contact_email", "contact_phone", "contact_website",
                     "contact_source", "contact_at", "sent_at", "gmail_message_id",
                     "gmail_thread_id", "replied_at", "queued_at", "email_review",
-                    "draft_lang", "approved_at", "followup_at"):
+                    "draft_lang", "approved_at", "followup_at", "scheduled_at",
+                    "scheduler_job_id"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT")
         # runs.category_id was added after the first release (niche categories).
@@ -524,6 +532,8 @@ def row_to_record(row: sqlite3.Row, full: bool = True) -> dict:
              "contact": _contact_dict(row),
              "review": json.loads(row["email_review"]) if row["email_review"] else None,
              "followup": followup,
+             "scheduled_at": row["scheduled_at"],
+             "scheduler_job_id": scheduler_job_id(row),
              "sent_at": None if followup else row["sent_at"],
              "replied_at": None if followup else row["replied_at"]}
             if row["email_subject"] else None
@@ -713,11 +723,25 @@ def followup_due_at(row) -> str | None:
     return due.isoformat(timespec="seconds")
 
 
+def scheduler_job_id(row) -> int | None:
+    """A prospect's scheduler job id as an int, whatever SQLite handed back.
+
+    The column has TEXT affinity on upgraded databases (see the schema), so this
+    is the one place that normalizes it.
+    """
+    raw = row["scheduler_job_id"] if "scheduler_job_id" in row.keys() else None
+    try:
+        return int(raw) if raw not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def draft_status(row) -> str:
     """A prospect's Pipeline status from its row (needs sent_at, followup_at,
     replied_at, n_sends, email_subject, email_review, contact_email,
-    approved_at): 'sent' (and nothing pending), 'followup-due' (sent, and the
-    next follow-up is due — see followup_due_at — but not drafted yet),
+    approved_at, scheduled_at): 'sent' (and nothing pending), 'followup-due'
+    (sent, and the next follow-up is due — see followup_due_at — but not drafted
+    yet), 'scheduled' (queued on the scheduler service, waiting for its moment),
     'waiting' (no draft yet), 'needs-review' (review failed or rules still
     broken, unless approved by hand), 'no-contact', or 'ready'. A pending
     follow-up gets the same draft statuses as a first email."""
@@ -727,6 +751,11 @@ def draft_status(row) -> str:
         return "followup-due" if due and due <= _now() else "sent"
     if not row["email_subject"]:
         return "waiting"
+    # Scheduled outranks the draft checks below: the text is already frozen on
+    # the scheduler, so "needs-review" would be advice about a draft that can no
+    # longer change without cancelling first.
+    if row["scheduled_at"]:
+        return "scheduled"
     if not row["approved_at"] and (not review or review.get("error") or review.get("remaining")):
         return "needs-review"
     if not row["contact_email"]:
@@ -761,6 +790,9 @@ def queued_needing_draft(limit: int | None = 10) -> list[dict]:
         rows = conn.execute(
             "SELECT id, company, email_subject, email_review, approved_at FROM prospects "
             "WHERE ((queued_at IS NOT NULL AND sent_at IS NULL) OR followup_at IS NOT NULL) "
+            # A scheduled draft is frozen on the scheduler: redrafting it here
+            # would send the old text and show the new one.
+            "AND scheduled_at IS NULL "
             "AND error IS NULL ORDER BY COALESCE(queued_at, followup_at), id",
         ).fetchall()
     work = []
@@ -792,6 +824,8 @@ def prospects_to_draft(ids: list[int]) -> list[dict]:
     unsent (or have a follow-up pending or due), successfully researched
     prospects, oldest mark first. All get a full
     (re)draft — picking one is an explicit ask, even if it already has a draft.
+    A scheduled draft is skipped, though: its text is frozen on the scheduler,
+    so it has to be unscheduled before it can be rewritten.
     Same shape as queued_needing_draft."""
     if not ids:
         return []
@@ -803,7 +837,7 @@ def prospects_to_draft(ids: list[int]) -> list[dict]:
             list(ids),
         ).fetchall()
     return [{"id": r["id"], "company": r["company"], "drafted": False}
-            for r in rows if draft_status(r) != "sent"]
+            for r in rows if draft_status(r) not in ("sent", "scheduled")]
 
 
 def blocked_drafts() -> dict:
@@ -858,7 +892,7 @@ def active_contacts() -> list[dict]:
         rows = conn.execute(
             "SELECT id, company, tier, fit_score, queued_at, email_subject, email_at, "
             f"contact_email, email_review, sent_at, replied_at, approved_at, followup_at, "
-            f"{_N_SENDS} FROM prospects "
+            f"scheduled_at, scheduler_job_id, {_N_SENDS} FROM prospects "
             "WHERE (queued_at IS NOT NULL OR sent_at IS NOT NULL) AND error IS NULL "
             "ORDER BY sent_at IS NOT NULL AND followup_at IS NULL, "
             "sent_at IS NOT NULL, "
@@ -878,6 +912,8 @@ def active_contacts() -> list[dict]:
             "approved": bool(r["approved_at"]) and status != "sent",
             "followup": bool(r["followup_at"]),
             "followup_due_at": followup_due_at(r),
+            "scheduled_at": r["scheduled_at"],
+            "scheduler_job_id": scheduler_job_id(r),
             "sent_at": r["sent_at"], "replied_at": r["replied_at"],
         })
     return out
@@ -898,22 +934,65 @@ def set_prospect_contact(prospect_id: int, email: str, phone: str | None = None,
             "source": source, "found_at": ts}
 
 
+def set_scheduled(prospect_id: int, scheduled_at: str, job_id: int) -> bool:
+    """Record that this draft is queued on the scheduler for `scheduled_at`."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET scheduled_at=?, scheduler_job_id=? WHERE id=?",
+            (scheduled_at, str(job_id), prospect_id),
+        )
+        return cur.rowcount > 0
+
+
+def clear_scheduled(prospect_id: int) -> bool:
+    """Forget a schedule — cancelled, sent, or abandoned by the scheduler."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE prospects SET scheduled_at=NULL, scheduler_job_id=NULL WHERE id=?",
+            (prospect_id,),
+        )
+        return cur.rowcount > 0
+
+
+def scheduled_prospects() -> list[dict]:
+    """Every prospect waiting on a scheduler job, soonest first.
+
+    The reconcile pass walks these and asks the scheduler what became of each.
+    Returns [{'id', 'company', 'scheduled_at', 'job_id', 'contact_email'}].
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, company, scheduled_at, scheduler_job_id, contact_email "
+            "FROM prospects WHERE scheduled_at IS NOT NULL "
+            "ORDER BY scheduled_at, id").fetchall()
+    return [{"id": r["id"], "company": r["company"],
+             "scheduled_at": r["scheduled_at"], "job_id": scheduler_job_id(r),
+             "contact_email": r["contact_email"]} for r in rows]
+
+
 def mark_sent(prospect_id: int, message_id: str, thread_id: str,
               subject: str | None = None, body: str | None = None,
-              contact_email: str | None = None) -> bool:
+              contact_email: str | None = None,
+              sent_at: str | None = None) -> bool:
     """Record that the outreach email was sent via Gmail, with its ids.
 
     Appends a row to the sends history (snapshotting the subject/body/address
-    that went out) and refreshes the last-send cache on the prospect: sent_at
-    (now), the Gmail message/thread ids, and replied_at cleared since this is a
-    fresh send. Sending a follow-up clears its pending mark. Returns False if
-    there's no such prospect.
+    that went out) and refreshes the last-send cache on the prospect: sent_at,
+    the Gmail message/thread ids, and replied_at cleared since this is a fresh
+    send. Sending a follow-up clears its pending mark, and any schedule is
+    cleared too — the email has gone. Returns False if there's no such prospect.
+
+    `sent_at` defaults to now, which is right for an in-app send. A scheduled
+    send passes the moment it actually went out: the follow-up schedule counts
+    from this timestamp, so reconciling on Wednesday must not claim Monday's
+    email was sent on Wednesday.
     """
-    ts = _now()
+    ts = sent_at or _now()
     with _connect() as conn:
         cur = conn.execute(
             "UPDATE prospects SET sent_at=?, gmail_message_id=?, "
-            "gmail_thread_id=?, replied_at=NULL, followup_at=NULL WHERE id=?",
+            "gmail_thread_id=?, replied_at=NULL, followup_at=NULL, "
+            "scheduled_at=NULL, scheduler_job_id=NULL WHERE id=?",
             (ts, message_id, thread_id, prospect_id),
         )
         if cur.rowcount == 0:
