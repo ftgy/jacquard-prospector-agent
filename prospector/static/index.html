@@ -406,6 +406,10 @@
   .schedpop h4 { margin: 0 0 8px; font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
   .schedpop input[type=datetime-local] { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 8px;
     border: 1px solid var(--hairline); border-radius: 7px; background: var(--surface-2); color: var(--ink); }
+  /* The picked moment spelled out, so a misread one is caught before sending. */
+  .schedpop .when { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    margin-top: 7px; font-size: 11.5px; color: var(--muted); }
+  .schedpop .when.past { color: var(--tier-d); }
   .schedpop .presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
   .schedpop .preset { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 999px;
     border: 1px solid var(--hairline); background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
@@ -1093,12 +1097,19 @@ function openSchedulePopover(anchor, rows){
   input.min = localInputValue(new Date());
   pop.appendChild(input);
 
+  // What the picker's value actually means, echoed as it's typed. A 12-hour
+  // field left on AM (12:50 AM, not PM) schedules into the past, which is only
+  // obvious once the moment is spelled out — so it's spelled out, and the
+  // twelve-hours-later reading is offered as a one-click fix.
+  const when = el("div", "when");
+  pop.appendChild(when);
+
   const presets = el("div", "presets");
-  for (const [label, when] of [["Mon 10:00", () => nextWeekday(1, 10)],
+  for (const [label, at] of [["Mon 10:00", () => nextWeekday(1, 10)],
                                ["Tue 10:00", () => nextWeekday(2, 10)],
                                ["Tomorrow 9:00", () => nextWeekday(new Date(Date.now()+86400000).getDay(), 9)]]){
     const b = el("button", "preset", label);
-    b.onclick = () => { input.value = localInputValue(when()); };
+    b.onclick = () => { input.value = localInputValue(at()); drawWhen(); };
     presets.appendChild(b);
   }
   pop.appendChild(presets);
@@ -1109,10 +1120,36 @@ function openSchedulePopover(anchor, rows){
   const cancel = el("button", "icon-btn", "Cancel");
   cancel.onclick = () => pop.remove();
   const go = el("button", "icon-btn primary", "◷ Schedule");
+
+  function drawWhen(){
+    const iso = sendAtISO(input.value);
+    const past = !!iso && new Date(iso) <= new Date();
+    when.className = "when" + (past ? " past" : "");
+    when.replaceChildren();
+    if (!iso) when.textContent = "Pick a date and time.";
+    else when.append(el("span", null,
+      past ? `⚠ ${esc(localStamp(iso))} has already passed`
+           : `Goes out ${esc(localStamp(iso))}`));
+    // The same wall clock twelve hours on — the AM/PM segment's other reading.
+    const pm = past ? new Date(new Date(iso).getTime() + 12 * 3600 * 1000) : null;
+    if (pm && pm > new Date()){
+      const fix = el("button", "preset", `Did you mean ${esc(localStamp(pm.toISOString()))}?`);
+      fix.onclick = () => { input.value = localInputValue(pm); drawWhen(); };
+      when.appendChild(fix);
+    }
+    go.disabled = !iso || past;
+  }
+  input.oninput = drawWhen;
+  drawWhen();
+
   go.onclick = async () => {
     const send_at = sendAtISO(input.value);
     if (!send_at){ toast("Pick a date and time first."); return; }
-    if (new Date(send_at) <= new Date()){ toast("That time has already passed."); return; }
+    if (new Date(send_at) <= new Date()){
+      toast(`${localStamp(send_at)} has already passed — check the date and the AM/PM segment.`);
+      drawWhen();
+      return;
+    }
     go.disabled = cancel.disabled = true; go.textContent = "Scheduling…";
     let ok = 0; const failures = [];
     for (const r of rows){
@@ -1473,12 +1510,18 @@ function relTime(iso){
   return then.toLocaleDateString(undefined, {day:"numeric", month:"short"});
 }
 
-// A scheduled moment in the reader's own time zone ("Mon 28 Sep, 10:00"). The
+// A scheduled moment in the reader's own time zone ("lun, 28 sept, 10:00"). The
 // server stores and returns UTC, but "Monday 10:00" only means anything local.
+//
+// Always 24-hour, whatever the browser's locale says: a send time read an hour
+// wrong is a mis-sent cold email, and 12:50 PM (midday) against 12:50 AM (fifty
+// minutes past midnight) is the reading people get wrong. hourCycle rather than
+// hour12, which renders midnight as "24:50".
 function localStamp(iso){
   if (!iso) return "";
   return new Date(iso).toLocaleString(undefined,
-    {weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"});
+    {weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit",
+     hourCycle:"h23"});
 }
 
 // An <input type="datetime-local"> wants local wall-clock text, not an ISO
