@@ -8,7 +8,7 @@ SUBJECT = "¿Cuánto tarda un CV en estar listo para enviar?"
 
 def body(observation="Vi que en vuestra web decís que vuestros reclutadores son "
                      "expertos en talento. Imagino que buena parte de la semana se "
-                     "va en reformatear CVs. ¿Cuánto tiempo pierde hoy el equipo en "
+                     "va en reformatear CVs. ¿Cuánto tiempo tarda hoy el equipo en "
                      "eso?",
          ask="¿Os cuadra agendar una llamada de 20 minutos para comentarlo? Si ya lo "
              "tenéis cubierto, quedo a vuestra disposición para otra ocasión.",

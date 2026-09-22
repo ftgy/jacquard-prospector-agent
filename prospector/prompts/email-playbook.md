@@ -13,11 +13,13 @@ open with the observation about them.
    the weekly report). One task, named — not "AI solutions", not a list. Then, rather
    than *asserting* how much time it eats, **turn the cost into a concrete question
    that makes them feel it** — a specific question they'd have to stop and answer,
-   named with their own systems and cases ("¿cuánto tiempo pierde hoy el equipo entre
+   named with their own systems and cases ("¿cuánto tiempo tarda hoy el equipo entre
    que un lead escribe en alemán desde Canarias y que Resales Online sabe a qué agente
    va?"), not a vague "¿os pasa esto?". A pointed question lets *them* fill in the
-   number instead of you claiming it. Observation, guess and question go together in
-   this first paragraph.
+   number instead of you claiming it. Ask how long it *takes* ("¿Cuánto tiempo tarda
+   hoy el equipo…?"), never how much time they *lose* ("pierde", "perdéis") — calling
+   their work wasted time reads as a judgment from a stranger. Observation, guess and
+   question go together in this first paragraph.
 3. **Who you are + the offer** — one paragraph. It OPENS with the fixed
    self-introduction, reproduced VERBATIM (its exact wording is given to you in the
    instructions above: "Soy ingeniero de software y me dedico a automatizar justo ese
@@ -56,7 +58,7 @@ what the system would do):
 >
 > Vi que atendéis clientes en cuatro idiomas y que gestionáis la contabilidad y las
 > nóminas de empresas extranjeras. Imagino que buena parte de la semana del equipo
-> se va en traducir correos y documentos. ¿Cuánto tiempo pierde hoy el equipo entre
+> se va en traducir correos y documentos. ¿Cuánto tiempo tarda hoy el equipo entre
 > que llega un documento en francés o neerlandés y está listo para revisar y enviar?
 >
 > Soy ingeniero de software y me dedico a automatizar justo ese tipo de tareas con
