@@ -22,10 +22,13 @@ open with the observation about them.
    self-introduction, reproduced VERBATIM (its exact wording is given to you in the
    instructions above: "Soy ingeniero de software y me dedico a automatizar justo ese
    tipo de tareas con agentes de IA.") — don't paraphrase, reorder, or add to it.
-   Then the offer, small and concrete: for a case like theirs I'd build an agent
-   that takes exactly that flow off their plate; it usually gets resolved in a
-   couple of weeks ("Para un caso como el vuestro montaría un agente que se encargue
-   de ese flujo concreto; esto suele resolverse en un par de semanas"). Easy to refuse.
+   Then the offer, small and concrete: for a case like theirs I'd build a system
+   that does X — say in a few words what the system would actually do with that one
+   task, in their terms ("…montaría un sistema que traduzca cada documento entrante
+   y lo deje listo para revisar"), then "esto suele resolverse en un par de
+   semanas". Describe one flow, not a feature list. Only if nothing concrete comes
+   to mind, fall back to the generic "que se encargue de ese flujo concreto". Easy
+   to refuse.
 4. **The ask** — a low-friction question proposing a short next step: a 20-minute
    call. The ask is ONE single sentence that STARTS with this exact wording,
    VERBATIM — do not reword it: **"¿Os cuadra agendar una llamada de 20 minutos
@@ -41,7 +44,8 @@ open with the observation about them.
    valediction ("Un saludo,") above the signature.
 
 **Example** (Spanish, `vosotros` — note the result-oriented subject, no intro up
-front, the felt question, and the self-intro opening the offer):
+front, the felt question, the self-intro opening the offer, and an offer that says
+what the system would do):
 
 > Subject: ¿Cuánto tarda un documento en francés en estar listo?
 >
@@ -53,8 +57,9 @@ front, the felt question, and the self-intro opening the offer):
 > que llega un documento en francés o neerlandés y está listo para revisar y enviar?
 >
 > Soy ingeniero de software y me dedico a automatizar justo ese tipo de tareas con
-> agentes de IA. Para un caso como el vuestro montaría un agente que se encargue de
-> ese flujo concreto; esto suele resolverse en un par de semanas.
+> agentes de IA. Para un caso como el vuestro montaría un sistema que traduzca cada
+> documento entrante y lo deje listo para revisar; esto suele resolverse en un par de
+> semanas.
 >
 > ¿Os cuadra agendar una llamada de 20 minutos para comentarlo? Si ya lo tenéis
 > cubierto, quedo a vuestra disposición para otra ocasión.
@@ -94,10 +99,12 @@ front, the felt question, and the self-intro opening the offer):
   them ("vuestros asesores como Gisela o Germán" — never). Naming a stranger's
   colleagues reads as surveillance and destroys trust on the first line. Say
   "vuestro equipo", "vuestros asesores", "quien lo lleve", never a person's name.
-- **Never call the agent "pequeño".** Write "un agente", not "un agente pequeño"
-  ni "un pequeño agente". The diminutive shrinks the work in the reader's head
+- **Never call the system "pequeño".** Write "un sistema", not "un sistema
+  pequeño" ni "un pequeño sistema" (same for "agente"). The diminutive shrinks the work in the reader's head
   and makes it sound like a toy; the scope is already carried by "un flujo
-  concreto; esto suele resolverse en un par de semanas".
+  concreto; esto suele resolverse en un par de semanas". Call it "un sistema" in
+  the offer — the self-intro already says "agentes de IA", so repeating "agente"
+  reads heavy.
 - **No price, no "you own the code".** Both are real selling points, but they
   belong on the call; here they make the mail read like a proposal, not a person.
 - **Plural `vosotros` for the reader, plural "we" for feina.dev.** You're writing to

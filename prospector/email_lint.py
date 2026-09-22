@@ -31,7 +31,8 @@ MAX_SENTENCE_WORDS = 55
 _BANNED = {
     "spanish": [
         (r"\busted(es)?\b", "Formal “usted” — address the team as vosotros."),
-        (r"pequeñ[oa]\s+agente|agente\s+pequeñ[oa]", "Calls the agent “pequeño”."),
+        (r"pequeñ[oa]\s+(agente|sistema)|(agente|sistema)\s+pequeñ[oa]",
+         "Calls the agent/system “pequeño”."),
         (r"tendría sentido", "“¿Tendría sentido…” — use the fixed ask opener."),
         (r"espero que (este|el) (correo|email|mensaje)", "Filler opener."),
         (r"espero que (estéis|os encontréis) bien", "Filler opener."),

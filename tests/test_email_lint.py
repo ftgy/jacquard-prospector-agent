@@ -14,7 +14,7 @@ def body(observation="Vi que en vuestra web decís que vuestros reclutadores son
              "tenéis cubierto, quedo a vuestra disposición para otra ocasión.",
          intro=SELF_INTRO["spanish"], signature=f"{SENDER_NAME}\n{SIGNATURE_LINKS}"):
     return (f"Buenas,\n\n{observation}\n\n{intro} Para un caso como el vuestro "
-            "montaría un agente que se encargue de ese flujo concreto; esto suele "
+            "montaría un sistema que se encargue de ese flujo concreto; esto suele "
             f"resolverse en un par de semanas.\n\n{ask}\n\nUn saludo,\n{signature}")
 
 
