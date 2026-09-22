@@ -26,9 +26,12 @@ open with the observation about them.
    that does X — say in a few words what the system would actually do with that one
    task, in their terms ("…montaría un sistema que traduzca cada documento entrante
    y lo deje listo para revisar"), then "esto suele resolverse en un par de
-   semanas". Describe one flow, not a feature list. Only if nothing concrete comes
-   to mind, fall back to the generic "que se encargue de ese flujo concreto". Easy
-   to refuse.
+   semanas". Keep it SHORT — one flow in about fifteen words, not a feature list, no
+   extra clauses ("…y avisando si…", "…sin tocar vuestro ERP…"). Build it only from
+   the task you already named and facts in the research: never add systems, tools
+   or details about how they work that the research doesn't support. Only if
+   nothing concrete comes to mind, fall back to the generic "que se encargue de ese
+   flujo concreto". Easy to refuse.
 4. **The ask** — a low-friction question proposing a short next step: a 20-minute
    call. The ask is ONE single sentence that STARTS with this exact wording,
    VERBATIM — do not reword it: **"¿Os cuadra agendar una llamada de 20 minutos

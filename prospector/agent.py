@@ -944,7 +944,8 @@ invented — remove it or soften it into a hedged guess.
 must match the brief exactly; restore them verbatim if they drifted. The offer \
 sentence after the self-introduction is NOT fixed: if it says concretely what the \
 system would do for this company, keep it — never swap it for the generic "ese \
-flujo concreto" wording.
+flujo concreto" wording. But hold it to the brief: cut any detail the research \
+doesn't support (systems, tools, how they work) and trim it to one short flow.
 - Automatic checks may have flagged problems already; fix each one (they are \
 reliable), then look for what they can't catch: people named, inferences stated \
 as fact, the agent-found-you story, generic flattery, more than one task, a lead-in \
