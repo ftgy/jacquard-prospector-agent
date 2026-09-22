@@ -63,9 +63,11 @@ python scripts/gmail_auth.py --status
 ## 5. Send
 
 Start the server (`python run_server.py`), open the **Outreach** tab — it should
-show **Gmail connected** with your address. Now the **Send** button on any
-prospect's drafted email sends it through your account, and the tab tracks sends
-and replies. Use **Check replies** to poll your sent threads for responses.
+show **Gmail connected** with your address. Now **Queue all** hands drafts to the
+scheduler, which sends them through your account (see
+[email-deliverability.md](email-deliverability.md) for when), and the tab
+tracks sends and replies. Use **Check replies** to poll your sent threads for
+responses.
 
 ## Scopes we request
 

@@ -28,11 +28,14 @@ class FakeScheduler:
     def queue(self, **kw):
         if self.unavailable:
             raise scheduler.SchedulerUnavailable("box is down")
+        # No send_at: the real service picks the next paced slot.
+        send_at = kw.get("send_at") or soon(hours=1, minutes=5 * self.next_id)
         job = {"id": self.next_id, "status": "pending", "recipient": kw["to"],
                "subject": kw["subject"], "body": kw["body"],
                "thread_id": kw.get("thread_id"),
                "skip_if_replied": kw.get("skip_if_replied", False),
-               "send_at": kw["send_at"], "gmail_message_id": None,
+               "idempotency_key": kw.get("idempotency_key"),
+               "send_at": send_at, "gmail_message_id": None,
                "gmail_thread_id": None, "error": None, "finished_at": None}
         self.jobs[self.next_id] = job
         self.next_id += 1
@@ -109,6 +112,16 @@ def test_scheduled_draft_shows_as_scheduled_in_the_pipeline(fake):
     assert row["scheduled_at"]
 
 
+def test_without_a_time_the_scheduler_picks_the_slot(fake):
+    pid = drafted()
+    out = service.schedule_outreach(pid)
+
+    job = fake.jobs[out["job_id"]]
+    # The slot the scheduler chose is what the Pipeline shows.
+    assert out["scheduled_at"] == job["send_at"]
+    assert db.get_prospect(pid)["email"]["scheduled_at"] == job["send_at"]
+
+
 def test_local_time_is_converted_to_utc(fake):
     pid = drafted()
     # 10:00 in Madrid (CEST) is 08:00 UTC — what the scheduler must store.
@@ -156,13 +169,15 @@ def test_an_unreachable_scheduler_leaves_nothing_scheduled(fake):
     assert db.get_prospect(pid)["email"]["scheduled_at"] is None
 
 
-def test_the_idempotency_key_pins_prospect_and_moment(fake, monkeypatch):
+def test_the_idempotency_key_pins_prospect_and_email(fake, monkeypatch):
+    # One key per email in the sequence, not per moment: a retried request
+    # with the same email gets the same job, whatever slot it was given.
     seen = {}
     monkeypatch.setattr(scheduler, "queue",
                         lambda **kw: seen.update(kw) or fake.queue(**kw))
     pid = drafted()
-    out = service.schedule_outreach(pid, soon(days=1))
-    assert seen["idempotency_key"] == f"prospect-{pid}-{out['scheduled_at']}"
+    service.schedule_outreach(pid, soon(days=1))
+    assert seen["idempotency_key"] == f"prospect-{pid}-send-1"
 
 
 # --- the draft is frozen once scheduled --------------------------------------
@@ -324,6 +339,12 @@ def client():
         yield c
 
 
+def test_queue_over_http_without_a_time(client, fake):
+    pid = drafted()
+    r = client.post(f"/api/prospects/{pid}/schedule")
+    assert r.status_code == 200 and r.json()["scheduled_at"]
+
+
 def test_schedule_and_cancel_over_http(client, fake):
     pid = drafted()
 
@@ -369,3 +390,93 @@ def test_scheduler_status_says_not_configured(client, monkeypatch):
     monkeypatch.delenv("SCHEDULER_URL", raising=False)
     body = client.get("/api/scheduler/status").json()
     assert body["connected"] is False and "reason" in body
+
+
+# --- "Queue all": hand every ready draft to the scheduler --------------------
+
+def ready(name, contact="hola@x.es") -> int:
+    """A marked prospect with a reviewed, rule-clean draft (status 'ready')."""
+    pid = db.insert_prospect(make_record(name))
+    db.set_queued(pid, True)
+    db.set_prospect_email(pid, f"subj {name}", f"body {name}", "spanish")
+    db.set_email_review(pid, {"issues": [], "remaining": [], "error": None})
+    if contact:
+        db.set_prospect_contact(pid, contact)
+    return pid
+
+
+def queued_subjects(fake) -> list[str]:
+    return [j["subject"] for j in fake.jobs.values()]
+
+
+def test_queue_ready_queues_only_ready_drafts(fake):
+    a = ready("A")
+    ready("NoContact", contact=None)
+    blocked = ready("Blocked")
+    db.set_email_review(blocked, {"issues": [], "remaining": [{"rule": "x"}], "error": None})
+
+    counts = service.queue_ready()
+
+    assert queued_subjects(fake) == ["subj A"]
+    assert counts["total"] == counts["queued"] == 1 and counts["failed"] == 0
+    assert counts["first_at"] == counts["last_at"] == fake.jobs[1]["send_at"]
+    assert db.get_prospect(a)["email"]["scheduled_at"]
+    assert not db.get_prospect(a)["email"]["sent_at"]      # queued, not sent
+
+
+def test_queue_ready_limits_to_ids(fake):
+    a, b, c = ready("A"), ready("B"), ready("C")
+    service.queue_ready([c, a])
+    assert sorted(queued_subjects(fake)) == ["subj A", "subj C"]
+
+
+def test_queue_ready_never_queues_twice(fake):
+    a, b = ready("A"), ready("B")
+
+    def progress(counts, current):
+        if current == "A":
+            service.schedule_outreach(b)      # B queued from elsewhere meanwhile
+    counts = service.queue_ready(on_progress=progress)
+    assert sorted(queued_subjects(fake)) == ["subj A", "subj B"]
+    assert counts["queued"] == 1 and counts["skipped"] == 1
+
+
+def test_queue_ready_aborts_after_consecutive_failures(fake):
+    for n in range(5):
+        ready(f"C{n}")
+    fake.unavailable = True
+    counts = service.queue_ready()
+    assert counts["failed"] == service.QUEUE_MAX_CONSECUTIVE_ERRORS
+    assert counts["aborted"] is True and "box is down" in counts["last_error"]
+
+
+def test_queue_ready_includes_approved_drafts(fake):
+    pid = ready("A")
+    db.set_email_review(pid, {"issues": [], "remaining": [{"rule": "x"}], "error": None})
+    service.queue_ready()
+    assert queued_subjects(fake) == []                  # blocked: not queued
+    db.set_draft_approved(pid, True)
+    service.queue_ready()
+    assert queued_subjects(fake) == ["subj A"]
+
+
+def test_start_queue_ready_async_needs_the_scheduler(fake, monkeypatch):
+    monkeypatch.setattr(service, "scheduler_enabled", lambda: False)
+    with pytest.raises(scheduler.SchedulerUnavailable):
+        service.start_queue_ready_async()
+    assert not service.queue_job_status().get("running")
+
+
+def test_start_queue_ready_async_runs_job(fake, monkeypatch):
+    import time
+
+    monkeypatch.setattr(service, "scheduler_enabled", lambda: True)
+    a = ready("A")
+    status = service.start_queue_ready_async([a])
+    assert status["running"] is True
+    deadline = time.time() + 5
+    while service.queue_job_status()["running"] and time.time() < deadline:
+        time.sleep(0.02)
+    final = service.queue_job_status()
+    assert final["queued"] == 1 and final["error"] is None
+    assert queued_subjects(fake) == ["subj A"]

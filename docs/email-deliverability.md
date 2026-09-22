@@ -37,6 +37,13 @@ of clicking "Report spam". Honour it right away and it costs you nothing.
 This is one mailbox on a young domain, so reputation builds slowly and is easy
 to lose.
 
+The dashboard doesn't send anything itself. **Queue all** hands drafts to the
+prospector-scheduler service, and that service applies the limits and times below
+when it picks each email's slot. The settings are `SCHEDULER_DAILY_CAP`,
+`SCHEDULER_SEND_WINDOWS`, `SCHEDULER_BLACKOUT_DATES` and
+`SCHEDULER_GAP_MIN/MAX_MINUTES` in the scheduler's `.env`. To raise the daily
+limit, change `SCHEDULER_DAILY_CAP` there.
+
 | Period | New first emails per day | Notes |
 | --- | --- | --- |
 | Weeks 1–2 | **10–15** | Watch every reply and bounce by hand. |
@@ -45,8 +52,8 @@ to lose.
 
 - Follow-ups count toward the day's total. With `FOLLOWUP_DAYS=4,7`, 20 new emails a
   day grows to about 40–50 sends a day once follow-ups start going out.
-- **Space sends out**, a few minutes apart at irregular intervals (the scheduler
-  helps here). Don't send 30 at once.
+- **Space sends out**, a few minutes apart at irregular intervals. The scheduler
+  does this automatically, 4 to 9 minutes apart.
 - **Keep it steady.** 15 a day every working day is better than 0, 0, 60.
 - Gmail's hard limits (500/day personal, 2,000/day Workspace) are not a target.
   Getting close to them is how accounts get suspended.

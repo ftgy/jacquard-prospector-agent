@@ -473,25 +473,25 @@ def test_draft_queued_endpoints(client, monkeypatch):
     assert got["ids"] == [3, 5]                     # "Draft selected"
 
 
-def test_send_ready_endpoints(client, monkeypatch):
-    from prospector import gmailer, service
+def test_queue_ready_endpoints(client, monkeypatch):
+    from prospector import scheduler, service
 
-    def not_connected(ids=None):
-        raise gmailer.GmailNotConfigured("connect Gmail")
+    def not_set_up(ids=None):
+        raise scheduler.SchedulerUnavailable("set up the scheduler")
 
     def busy(ids=None):
-        raise RuntimeError("Emails are already being sent.")
+        raise RuntimeError("Emails are already being queued.")
 
-    monkeypatch.setattr(service, "start_send_ready_async", not_connected)
-    assert client.post("/api/outreach/send-ready").status_code == 400
-    monkeypatch.setattr(service, "start_send_ready_async", busy)
-    assert client.post("/api/outreach/send-ready").status_code == 409
+    monkeypatch.setattr(service, "start_queue_ready_async", not_set_up)
+    assert client.post("/api/outreach/queue-ready").status_code == 400
+    monkeypatch.setattr(service, "start_queue_ready_async", busy)
+    assert client.post("/api/outreach/queue-ready").status_code == 409
     got = {}
-    monkeypatch.setattr(service, "start_send_ready_async",
+    monkeypatch.setattr(service, "start_queue_ready_async",
                         lambda ids=None: got.update(ids=ids) or {"running": True})
-    assert client.post("/api/outreach/send-ready", json={"ids": [4, 7]}).json() == {"running": True}
+    assert client.post("/api/outreach/queue-ready", json={"ids": [4, 7]}).json() == {"running": True}
     assert got["ids"] == [4, 7]
-    assert "running" in client.get("/api/outreach/send-status").json()
+    assert "running" in client.get("/api/outreach/queue-status").json()
 
 
 def test_save_email_endpoint(client):

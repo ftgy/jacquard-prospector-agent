@@ -35,6 +35,7 @@ from .config import (
     get_output_language,
     get_review_model,
     make_client,
+    scheduler_enabled,
     using_proxy,
 )
 from .email_lint import lint_email
@@ -627,8 +628,8 @@ def start_draft_queued_async(limit: int | None = None,
     with _draft_job_guard:
         if _draft_job.get("running"):
             raise RuntimeError("A draft run is already in progress.")
-        if _send_job.get("running"):
-            raise RuntimeError("Emails are being sent — wait for that to finish.")
+        if _queue_job.get("running"):
+            raise RuntimeError("Emails are being queued — wait for that to finish.")
         lock = acquire_draft_lock()
         if lock is None:
             raise RuntimeError("A draft run (cron or terminal) is already in progress.")
@@ -736,18 +737,21 @@ def send_outreach(prospect_id: int, subject: str | None = None,
 
 # --- Scheduled sends (via the prospector-scheduler service) ------------------
 #
-# The Gmail API can't schedule, so a draft that shouldn't go out now is frozen
-# and handed to an always-on service that sends it at its moment. The prospect
-# database stays ours: we record the schedule, and a later reconcile pass turns
-# a finished job into a normal send.
+# Outreach goes out through an always-on scheduler service, not from here: the
+# dashboard freezes a draft and queues it, and the scheduler picks the slot
+# (send windows, daily cap, spacing: docs/email-deliverability.md) and sends it.
+# The prospect database stays ours: we record the schedule, and a later
+# reconcile pass turns a finished job into a normal send.
 
 
-def schedule_outreach(prospect_id: int, send_at: str) -> dict:
-    """Freeze a prospect's draft and queue it on the scheduler for `send_at`.
+def schedule_outreach(prospect_id: int, send_at: str | None = None) -> dict:
+    """Freeze a prospect's draft and queue it on the scheduler.
 
-    Same preconditions as send_outreach — a draft, a contact address, and (for a
-    follow-up) no reply yet — checked here so a bad schedule fails now rather
-    than silently at 10:00 on Monday. Returns {'id', 'scheduled_at', 'job_id'}.
+    Without `send_at` the scheduler gives it the next paced slot; with one, it
+    goes out at that moment. Same preconditions as send_outreach — a draft, a
+    contact address, and (for a follow-up) no reply yet — checked here so a bad
+    email fails now rather than silently at 10:00 on Monday.
+    Returns {'id', 'scheduled_at', 'job_id'}.
 
     Raises LookupError if the prospect is gone, ValueError if it can't be sent,
     and scheduler.SchedulerUnavailable if the service can't be reached.
@@ -769,8 +773,8 @@ def schedule_outreach(prospect_id: int, send_at: str) -> dict:
     if not body.strip():
         raise ValueError("The email body is empty — nothing to schedule.")
 
-    when = _utc_iso(send_at)
-    if when <= _now_iso():
+    when = _utc_iso(send_at) if send_at else None
+    if when and when <= _now_iso():
         raise ValueError("That time has already passed — pick a future one.")
 
     sends = _followup_sends(rec)
@@ -782,12 +786,13 @@ def schedule_outreach(prospect_id: int, send_at: str) -> dict:
         to=to, subject=subject, body=body, send_at=when, thread_id=thread_id,
         # A follow-up to someone who answers over the weekend must not go out.
         skip_if_replied=bool(thread_id),
-        # Same prospect, same moment, same job — a retried request can't queue
-        # a second copy of the email.
-        idempotency_key=f"prospect-{prospect_id}-{when}",
+        # One key per email in the sequence: a retried request gets the same
+        # job back instead of a second copy. The scheduler frees the key once
+        # a job is canceled, skipped or failed, so queueing again still works.
+        idempotency_key=f"prospect-{prospect_id}-send-{len(sends or []) + 1}",
     )
-    db.set_scheduled(prospect_id, when, job["id"])
-    return {"id": prospect_id, "scheduled_at": when, "job_id": job["id"]}
+    db.set_scheduled(prospect_id, job["send_at"], job["id"])
+    return {"id": prospect_id, "scheduled_at": job["send_at"], "job_id": job["id"]}
 
 
 def unschedule_outreach(prospect_id: int) -> dict:
@@ -886,15 +891,14 @@ def _utc_iso(value: str) -> str:
     return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
-SEND_PACE_SECONDS = 2.0          # gap between sends (be gentle with Gmail)
-SEND_MAX_CONSECUTIVE_ERRORS = 3  # abort the batch — Gmail is likely down
+QUEUE_MAX_CONSECUTIVE_ERRORS = 3  # abort the batch — the scheduler is likely down
 
-# Progress of the dashboard's "Send all" job, polled by GET /api/outreach/send-status.
-_send_job: dict = {"running": False}
+# Progress of the dashboard's "Queue all" job, polled by GET /api/outreach/queue-status.
+_queue_job: dict = {"running": False}
 
 
 def sendable(ids: list[int] | None = None) -> list[dict]:
-    """The "Send all" worklist: pipeline rows whose status is 'ready' (reviewed,
+    """The "Queue all" worklist: pipeline rows whose status is 'ready' (reviewed,
     no broken rules, has a contact), limited to `ids` when given. Same order as
     the Pipeline table. Returns [{'id', 'company'}]."""
     wanted = set(ids) if ids is not None else None
@@ -902,82 +906,90 @@ def sendable(ids: list[int] | None = None) -> list[dict]:
             if r["status"] == "ready" and (wanted is None or r["id"] in wanted)]
 
 
-def send_ready(ids: list[int] | None = None, on_progress=None,
-               pace: float = SEND_PACE_SECONDS) -> dict:
-    """Send the stored draft of every ready prospect (or just the ready ones of
-    `ids`) via Gmail, one by one. A prospect sent meanwhile (e.g. from the
-    drawer) is skipped, never sent twice. `on_progress(counts, current)` is
-    called before each send and once at the end with current=None. Stops after
-    SEND_MAX_CONSECUTIVE_ERRORS failures in a row. Returns {'total', 'done',
-    'sent', 'skipped', 'failed', 'aborted', 'last_error'}.
+def queue_ready(ids: list[int] | None = None, on_progress=None) -> dict:
+    """Hand every ready draft (or just the ready ones of `ids`) to the scheduler,
+    one by one, in Pipeline order, which is also the order they'll go out. A
+    prospect sent or queued meanwhile is skipped, never queued twice.
+    `on_progress(counts, current)` is called before each one and once at the
+    end with current=None. Stops after QUEUE_MAX_CONSECUTIVE_ERRORS failures in
+    a row. Returns {'total', 'done', 'queued', 'skipped', 'failed', 'aborted',
+    'last_error', 'first_at', 'last_at'}; the last two are the send times of the
+    first and last email queued.
     """
     work = sendable(ids)
-    counts = {"total": len(work), "done": 0, "sent": 0, "skipped": 0, "failed": 0,
-              "aborted": False, "last_error": None}
+    counts = {"total": len(work), "done": 0, "queued": 0, "skipped": 0, "failed": 0,
+              "aborted": False, "last_error": None, "first_at": None, "last_at": None}
     consecutive = 0
-    for i, w in enumerate(work):
+    for w in work:
         if on_progress:
             on_progress(counts, w["company"])
         rec = db.get_prospect(w["id"])
-        if rec is None or (rec.get("email") or {}).get("sent_at"):
+        email = (rec or {}).get("email") or {}
+        if rec is None or email.get("sent_at") or email.get("scheduled_at"):
             counts["skipped"] += 1
         else:
             try:
-                send_outreach(w["id"])
+                out = schedule_outreach(w["id"])
             except Exception as e:
                 consecutive += 1
                 counts["failed"] += 1
                 counts["last_error"] = f"{w['company']}: {friendly_api_error(e).splitlines()[0][:160]}"
             else:
                 consecutive = 0
-                counts["sent"] += 1
+                counts["queued"] += 1
+                counts["first_at"] = counts["first_at"] or out["scheduled_at"]
+                counts["last_at"] = out["scheduled_at"]
         counts["done"] += 1
-        if consecutive >= SEND_MAX_CONSECUTIVE_ERRORS:
+        if consecutive >= QUEUE_MAX_CONSECUTIVE_ERRORS:
             counts["aborted"] = True
             break
-        if i < len(work) - 1:
-            time.sleep(pace)
     if on_progress:
         on_progress(counts, None)
     return counts
 
 
-def start_send_ready_async(ids: list[int] | None = None) -> dict:
-    """Run send_ready on a background thread for the dashboard's "Send all".
-    Returns the initial job status. Raises RuntimeError if a send or draft job
-    is already running, gmailer.GmailNotConfigured if Gmail isn't connected."""
+def start_queue_ready_async(ids: list[int] | None = None) -> dict:
+    """Run queue_ready on a background thread for the dashboard's "Queue all".
+    Returns the initial job status. Raises RuntimeError if a queue or draft job
+    is already running, scheduler.SchedulerUnavailable if it isn't configured."""
+    from . import scheduler
+
     with _draft_job_guard:
-        if _send_job.get("running"):
-            raise RuntimeError("Emails are already being sent.")
+        if _queue_job.get("running"):
+            raise RuntimeError("Emails are already being queued.")
         if _draft_job.get("running"):
             raise RuntimeError("A draft run is in progress — wait for it to finish.")
-        gmailer.ensure_authorized()
-        _send_job.clear()
-        _send_job.update(running=True, total=0, done=0, sent=0, skipped=0, failed=0,
-                         aborted=False, last_error=None, current=None, error=None,
-                         started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                         finished_at=None)
+        if not scheduler_enabled():
+            raise scheduler.SchedulerUnavailable(
+                "Sending goes through the scheduler, and it isn't set up. Set "
+                "SCHEDULER_URL and SCHEDULER_TOKEN in .env.")
+        _queue_job.clear()
+        _queue_job.update(running=True, total=0, done=0, queued=0, skipped=0, failed=0,
+                          aborted=False, last_error=None, first_at=None, last_at=None,
+                          current=None, error=None,
+                          started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                          finished_at=None)
 
     def progress(counts, current):
-        _send_job.update(counts, current=current)
+        _queue_job.update(counts, current=current)
 
     def work():
         try:
-            send_ready(ids, on_progress=progress)
+            queue_ready(ids, on_progress=progress)
         except Exception as e:  # unexpected — surface it instead of a stuck job
-            _send_job["error"] = friendly_api_error(e)
+            _queue_job["error"] = friendly_api_error(e)
         finally:
-            _send_job.update(running=False, current=None,
-                             finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+            _queue_job.update(running=False, current=None,
+                              finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
-    status = send_job_status()   # snapshot first, as in start_draft_queued_async
+    status = queue_job_status()   # snapshot first, as in start_draft_queued_async
     threading.Thread(target=work, daemon=True).start()
     return status
 
 
-def send_job_status() -> dict:
-    """The dashboard "Send all" job's progress."""
-    return dict(_send_job)
+def queue_job_status() -> dict:
+    """The dashboard "Queue all" job's progress."""
+    return dict(_queue_job)
 
 
 def refresh_replies() -> dict:

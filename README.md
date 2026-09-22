@@ -113,13 +113,16 @@ The dashboard has three tabs:
     companies you care about; it's slower and costs more, so it's off by default.
   - **Statistics** — the tier breakdown (A/B/C/disqualified) and average fit
     across all prospects.
-- **Outreach** — send drafted emails through your own Gmail account and watch the
-  numbers: sent today, this week, total, replies and reply rate, a 14-day
-  sent/replied bar chart, and a recent-sends list. **Check replies** polls your
-  sent threads for responses. Requires a one-time Gmail connection —
-  see [docs/gmail-setup.md](docs/gmail-setup.md). Before sending at volume, read
-  [docs/email-deliverability.md](docs/email-deliverability.md): daily limits,
-  send times, and handling unsubscribes.
+- **Outreach** — queue drafted emails and watch the numbers: sent today, this
+  week, total, replies and reply rate, a 14-day sent/replied bar chart, and a
+  recent-sends list. **Queue all** hands the ready drafts to the
+  [prospector-scheduler](../prospector-scheduler) service, which sends them from
+  your Gmail account in its send windows, a few minutes apart, up to a daily cap
+  (the policy is in [docs/email-deliverability.md](docs/email-deliverability.md)).
+  A queued email can be cancelled from its drawer until it goes out. **Check
+  replies** polls your sent threads for responses. Requires a one-time Gmail
+  connection (see [docs/gmail-setup.md](docs/gmail-setup.md)) and
+  `SCHEDULER_URL` / `SCHEDULER_TOKEN` in `.env`.
 
 Each prospect row opens a detail drawer (pain points → agent solutions, buying
 signals, sources). Runs stream their results into their group as each company

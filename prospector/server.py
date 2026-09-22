@@ -97,7 +97,7 @@ class QueueRequest(BaseModel):
 
 
 class DraftRequest(BaseModel):
-    # Prospect ids to draft ("Draft selected") or send ("Send selected").
+    # Prospect ids to draft ("Draft selected") or queue ("Queue selected").
     # Omitted -> the whole queue / every ready draft.
     ids: list[int] | None = Field(None, max_length=500)
 
@@ -122,9 +122,9 @@ class ContactEditRequest(BaseModel):
 
 
 class ScheduleRequest(BaseModel):
-    # When to send, ISO 8601. The dashboard sends the picked local time with its
-    # offset ("2026-09-28T10:00:00+02:00"); a naive value is read as UTC.
-    send_at: str = Field(..., max_length=64)
+    # When to send, ISO 8601 with its offset ("2026-09-28T10:00:00+02:00"); a
+    # naive value is read as UTC. Omitted -> the scheduler's next paced slot.
+    send_at: str | None = Field(None, max_length=64)
 
 
 # --- prospects ---------------------------------------------------------------
@@ -353,8 +353,9 @@ def api_send_outreach(prospect_id: int, req: SendRequest | None = None):
 
 
 @app.post("/api/prospects/{prospect_id}/schedule")
-def api_schedule_outreach(prospect_id: int, req: ScheduleRequest):
-    """Queue this prospect's draft to be sent at `send_at` by the scheduler.
+def api_schedule_outreach(prospect_id: int, req: ScheduleRequest | None = None):
+    """Queue this prospect's draft on the scheduler: at `send_at` if given,
+    else in the next paced slot.
 
     The draft is frozen at this point: editing it is refused until the schedule
     is cancelled. Returns {id, scheduled_at, job_id}.
@@ -362,7 +363,7 @@ def api_schedule_outreach(prospect_id: int, req: ScheduleRequest):
     from .scheduler import SchedulerUnavailable
     from .service import schedule_outreach
     try:
-        return schedule_outreach(prospect_id, req.send_at)
+        return schedule_outreach(prospect_id, (req or ScheduleRequest()).send_at)
     except LookupError:
         raise HTTPException(404, "prospect not found")
     except ValueError as e:
@@ -454,28 +455,29 @@ def api_draft_status():
     return draft_job_status()
 
 
-@app.post("/api/outreach/send-ready")
-def api_send_ready(req: DraftRequest | None = None):
-    """Start sending, in the background, every draft whose status is "ready";
-    optional body {ids: [...]} limits it to those prospects (others are skipped).
-    Returns the job status; poll GET /api/outreach/send-status. 409 if a send or
-    draft job is already running, 400 if Gmail isn't connected."""
-    from .gmailer import GmailNotConfigured
-    from .service import start_send_ready_async
+@app.post("/api/outreach/queue-ready")
+def api_queue_ready(req: DraftRequest | None = None):
+    """Hand every draft whose status is "ready" to the scheduler, in the
+    background; it picks each one's send slot. Optional body {ids: [...]} limits
+    it to those prospects (others are skipped). Returns the job status; poll
+    GET /api/outreach/queue-status. 409 if a queue or draft job is already
+    running, 400 if the scheduler isn't set up."""
+    from .scheduler import SchedulerUnavailable
+    from .service import start_queue_ready_async
     try:
         ids = (req or DraftRequest()).ids
-        return start_send_ready_async(ids=ids) if ids else start_send_ready_async()
-    except GmailNotConfigured as e:  # a RuntimeError too — catch it first
+        return start_queue_ready_async(ids=ids) if ids else start_queue_ready_async()
+    except SchedulerUnavailable as e:  # a RuntimeError too — catch it first
         raise HTTPException(400, str(e))
     except RuntimeError as e:
         raise HTTPException(409, str(e))
 
 
-@app.get("/api/outreach/send-status")
-def api_send_status():
-    """Progress of the dashboard-started "Send all" job."""
-    from .service import send_job_status
-    return send_job_status()
+@app.get("/api/outreach/queue-status")
+def api_queue_status():
+    """Progress of the dashboard-started "Queue all" job."""
+    from .service import queue_job_status
+    return queue_job_status()
 
 
 @app.get("/api/outreach/blocked")

@@ -1,10 +1,11 @@
 """
-Client for the prospector-scheduler service — "send this email on Monday at 10:00".
+Client for the prospector-scheduler service, which sends all outreach.
 
-The Gmail API has no scheduled send, so a draft that shouldn't go out now is
-handed to a small always-on service (the prospector-scheduler repo) that holds it
-until its moment and then sends it. That service owns nothing else: it takes a
-frozen payload and a time, and hands back the Gmail ids once it's done.
+The dashboard never sends by itself. It hands a frozen draft to a small
+always-on service (the prospector-scheduler repo), which picks the slot under
+the sending policy (send windows, daily cap, spacing; see
+docs/email-deliverability.md), sends it then, and hands back the Gmail ids. That
+service owns nothing else.
 
 This module is only the HTTP client. What the dashboard *does* with a finished
 job — recording the send, moving the row to Sent — lives in service.py, so the
@@ -79,10 +80,11 @@ def status() -> dict:
             "pending": body.get("pending", 0)}
 
 
-def queue(to: str, subject: str, body: str, send_at: str,
+def queue(to: str, subject: str, body: str, send_at: str | None = None,
           thread_id: str | None = None, skip_if_replied: bool = False,
           idempotency_key: str | None = None) -> dict:
-    """Queue an email for `send_at` (UTC ISO). Returns the stored job.
+    """Queue an email for `send_at` (UTC ISO), or for the scheduler's next paced
+    slot when it's None. Returns the stored job; its send_at is the slot.
 
     `idempotency_key` makes a retried call return the existing job instead of
     queueing a second copy — two identical cold emails is the expensive failure.

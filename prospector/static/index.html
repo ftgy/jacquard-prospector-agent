@@ -400,23 +400,6 @@
   .oqueue .qstat.scheduled { color: var(--tier-b); background: color-mix(in srgb, var(--tier-b) 14%, transparent); }
   .oqueue .sched-when { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: 6px; }
 
-  /* "Schedule" popover: a time to send, anchored under the toolbar button. */
-  .schedpop { position: absolute; z-index: 60; background: var(--surface); border: 1px solid var(--hairline);
-    border-radius: 10px; padding: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.18); width: 268px; }
-  .schedpop h4 { margin: 0 0 8px; font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
-  .schedpop input[type=datetime-local] { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 8px;
-    border: 1px solid var(--hairline); border-radius: 7px; background: var(--surface-2); color: var(--ink); }
-  /* The picked moment spelled out, so a misread one is caught before sending. */
-  .schedpop .when { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-    margin-top: 7px; font-size: 11.5px; color: var(--muted); }
-  .schedpop .when.past { color: var(--tier-d); }
-  .schedpop .presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-  .schedpop .preset { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 999px;
-    border: 1px solid var(--hairline); background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
-  .schedpop .preset:hover { border-color: var(--accent); color: var(--accent-ink); }
-  .schedpop .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
-  .schedpop .note { font-size: 11px; color: var(--muted); margin: 6px 0 0; line-height: 1.45; }
-
   /* A scheduled draft in the drawer: frozen text, and the way to free it. */
   .sched-pill { font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 1px 8px;
     border-radius: 999px; margin-left: 8px; color: var(--tier-b);
@@ -663,9 +646,8 @@
         <span class="draft-prog" id="draftProgress"></span>
         <span style="flex:1"></span>
         <button class="icon-btn primary" id="draftNowBtn" title="Write and review emails for the ticked companies, or the whole queue if none are ticked (nothing is sent)">✎ Draft all</button>
-        <span class="draft-prog" id="sendProgress"></span>
-        <button class="icon-btn" id="scheduleBtn" hidden title="Queue the ticked companies' drafts to send at a time you pick (they go out even with this laptop closed)">◷ Schedule</button>
-        <button class="icon-btn" id="sendAllBtn" title="Send the drafts of the ticked companies, or every draft that's ready to send if none are ticked (asks first)">➤ Send all</button>
+        <span class="draft-prog" id="queueProgress"></span>
+        <button class="icon-btn" id="queueAllBtn" title="Hand the ticked companies' drafts, or every draft that's ready if none are ticked, to the scheduler. It sends them in its send windows, a few minutes apart, up to its daily cap.">◷ Queue all</button>
       </div>
       <div class="scroll"><table class="otable oqueue" data-list="todo">
         <thead><tr><th class="pick"><input type="checkbox" id="o-pick-all" title="Select all"></th><th class="sortable" data-sort="company">Company</th><th class="sortable" data-sort="contact">Contact</th><th class="sortable" data-sort="draft">Draft</th></tr></thead>
@@ -819,8 +801,8 @@ async function loadOutreach(){
   // Pick up a job already running (e.g. started before a reload).
   fetch("/api/outreach/draft-status").then(r=>r.json()).then(j => {
     drawDraftJob(j); if (j.running || j.locked_elsewhere) watchDraftJob(); }).catch(()=>{});
-  fetch("/api/outreach/send-status").then(r=>r.json()).then(j => {
-    drawSendJob(j); if (j.running) watchSendJob(); }).catch(()=>{});
+  fetch("/api/outreach/queue-status").then(r=>r.json()).then(j => {
+    drawQueueJob(j); if (j.running) watchQueueJob(); }).catch(()=>{});
   let s;
   try { s = await fetch("/api/outreach").then(r=>r.json()); }
   catch { toast("Couldn't load outreach stats."); return; }
@@ -850,7 +832,7 @@ async function loadGmailStatus(){
 
 const QUEUE_LABEL = { ready: "ready to send", "needs-review": "⚠ check draft",
   "no-contact": "no contact", waiting: "waiting for draft", "followup-due": "↻ follow-up due",
-  scheduled: "◷ scheduled", sent: "✉ sent" };
+  scheduled: "◷ queued", sent: "✉ sent" };
 // Ticked unsent companies: "Draft all" becomes "Draft N selected". Kept across
 // table refreshes; ids that got sent or left the list drop out.
 const picked = new Set();
@@ -862,11 +844,11 @@ function drawPicks(){
   all.disabled = !pickable.length;
   const btn = $("#draftNowBtn");
   if (!btn.textContent.includes("Drafting")) btn.textContent = draftLabel();
-  const send = $("#sendAllBtn");
-  if (!send.textContent.includes("Sending")) send.textContent = sendLabel();
+  const queue = $("#queueAllBtn");
+  if (!queue.textContent.includes("Queueing")) queue.textContent = queueLabel();
 }
 const draftLabel = () => picked.size ? `✎ Draft ${picked.size} selected` : "✎ Draft all";
-const sendLabel = () => picked.size ? `➤ Send ${picked.size} selected` : "➤ Send all";
+const queueLabel = () => picked.size ? `◷ Queue ${picked.size} selected` : "◷ Queue all";
 $("#o-pick-all").onclick = e => {
   e.stopPropagation();
   const on = e.target.checked;
@@ -1024,187 +1006,85 @@ async function watchDraftJob(started = false){
   }, 2500);
 }
 
-// "Send all" / "Send N selected": sends the drafts that are ready to send —
-// the ticked ones, or all of them — after a confirm, as a server-side job whose
-// progress is polled like drafting. Ticked rows that aren't ready are skipped.
-let sendPoll = null;
-$("#sendAllBtn").onclick = async () => {
-  const ready = activeRows.filter(r => r.status === "ready" && (!picked.size || picked.has(r.id)));
-  if (!ready.length){
-    toast(picked.size ? "None of the selected companies is ready to send." : "Nothing is ready to send.");
-    return;
-  }
-  const skip = picked.size ? picked.size - ready.length : 0;
-  if (!confirm(`Send ${plural(ready.length, "email", "emails")} now from Gmail?` +
-      (skip ? `\n${plural(skip, "selected company isn't", "selected companies aren't")} ready to send and will be skipped.` : "") +
-      "\nThis can't be undone.")) return;
-  const btn = $("#sendAllBtn"); btn.disabled = true;
-  try {
-    const res = await fetch("/api/outreach/send-ready", {method:"POST",
-      headers:{"Content-Type":"application/json"}, body: JSON.stringify({ ids: ready.map(r => r.id) })});
-    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
-    picked.clear(); drawPicks();
-    document.querySelectorAll("#o-active .pick input").forEach(c => c.checked = false);
-    drawSendJob(await res.json());
-    watchSendJob(true);
-  } catch (e){ toast("Couldn't start sending: " + e.message); btn.disabled = false; }
-};
-// --- Scheduled sends ---------------------------------------------------------
-// The Gmail API can't schedule, so a time you pick is handed to the scheduler
-// service (see the prospector-scheduler repo), which sends it even with this
-// laptop closed. The controls stay hidden unless that service is configured.
-let schedulerOn = false;
+// "Queue all" / "Queue N selected": hands the drafts that are ready to send —
+// the ticked ones, or all of them — to the scheduler service (see the
+// prospector-scheduler repo), which picks each one's slot under the sending
+// policy (docs/email-deliverability.md) and sends it, even with this laptop
+// closed. Nothing is sent from here. Ticked rows that aren't ready are skipped;
+// a queued email can be cancelled from its drawer until it goes out.
+let queuePoll = null, schedulerOn = false;
 
 async function loadSchedulerStatus(){
   let s; try { s = await fetch("/api/scheduler/status").then(r=>r.json()); } catch { return; }
   schedulerOn = !!s.connected;
-  const btn = $("#scheduleBtn");
-  btn.hidden = !schedulerOn;
-  if (schedulerOn) btn.title = `Queue the ticked companies' drafts to send at a time you pick — ${s.pending || 0} waiting on the scheduler`;
+  const btn = $("#queueAllBtn");
+  btn.title = schedulerOn
+    ? `Hand the ticked companies' drafts, or every draft that's ready if none are ticked, to the scheduler. It sends them in its send windows, a few minutes apart, up to its daily cap — ${s.pending || 0} waiting now.`
+    : `The scheduler isn't reachable, so nothing can be queued: ${s.reason || "check SCHEDULER_URL"}`;
 }
 
 // Ask the scheduler what became of everything queued, and record any that went
-// out. This is what moves a scheduled email into Sent.
+// out. This is what moves a queued email into Sent.
 async function reconcileScheduled(quiet = true){
   let r; try { r = await fetch("/api/scheduler/reconcile", {method:"POST"}).then(x=>x.json()); }
   catch { return; }
-  if (r.sent) toast(`${plural(r.sent, "scheduled email", "scheduled emails")} went out.`);
+  if (r.sent) toast(`${plural(r.sent, "queued email", "queued emails")} went out.`);
   // A skipped or failed job needs saying out loud — the email did NOT go.
   (r.notes || []).forEach(n => toast(n));
   // loadOutreach refreshes the tables and counters (it doesn't reconcile, so
   // there's no loop back into here).
   if (r.sent || (r.notes || []).length) loadOutreach();
-  else if (!quiet) toast(r.checked ? `${r.pending} still waiting to go out.` : "Nothing is scheduled.");
+  else if (!quiet) toast(r.checked ? `${r.pending} still waiting to go out.` : "Nothing is queued.");
 }
 
-$("#scheduleBtn").onclick = e => {
-  e.stopPropagation();
-  // Only a draft that could be sent now can be queued for later.
+$("#queueAllBtn").onclick = async () => {
+  if (!schedulerOn){ toast("The scheduler isn't reachable — nothing was queued."); return; }
   const ready = activeRows.filter(r => r.status === "ready" && (!picked.size || picked.has(r.id)));
   if (!ready.length){
-    toast(picked.size ? "None of the selected companies is ready to send." : "Nothing is ready to schedule.");
+    toast(picked.size ? "None of the selected companies is ready to send." : "Nothing is ready to send.");
     return;
   }
-  openSchedulePopover($("#scheduleBtn"), ready);
-};
-
-function openSchedulePopover(anchor, rows){
-  document.querySelector(".schedpop")?.remove();
-  const pop = el("div", "schedpop");
-  pop.innerHTML = `<h4>Send ${esc(plural(rows.length, "email", "emails"))} at</h4>`;
-  const input = el("input"); input.type = "datetime-local";
-  input.value = localInputValue(nextWeekday(1, 10));      // next Monday, 10:00
-  input.min = localInputValue(new Date());
-  pop.appendChild(input);
-
-  // What the picker's value actually means, echoed as it's typed. A 12-hour
-  // field left on AM (12:50 AM, not PM) schedules into the past, which is only
-  // obvious once the moment is spelled out — so it's spelled out, and the
-  // twelve-hours-later reading is offered as a one-click fix.
-  const when = el("div", "when");
-  pop.appendChild(when);
-
-  const presets = el("div", "presets");
-  for (const [label, at] of [["Mon 10:00", () => nextWeekday(1, 10)],
-                               ["Tue 10:00", () => nextWeekday(2, 10)],
-                               ["Tomorrow 9:00", () => nextWeekday(new Date(Date.now()+86400000).getDay(), 9)]]){
-    const b = el("button", "preset", label);
-    b.onclick = () => { input.value = localInputValue(at()); drawWhen(); };
-    presets.appendChild(b);
-  }
-  pop.appendChild(presets);
-  pop.appendChild(el("p", "note",
-    "Your local time. They go out from the scheduler, so this laptop can be closed — the drafts are frozen until then."));
-
-  const row = el("div", "row");
-  const cancel = el("button", "icon-btn", "Cancel");
-  cancel.onclick = () => pop.remove();
-  const go = el("button", "icon-btn primary", "◷ Schedule");
-
-  function drawWhen(){
-    const iso = sendAtISO(input.value);
-    const past = !!iso && new Date(iso) <= new Date();
-    when.className = "when" + (past ? " past" : "");
-    when.replaceChildren();
-    if (!iso) when.textContent = "Pick a date and time.";
-    else when.append(el("span", null,
-      past ? `⚠ ${esc(localStamp(iso))} has already passed`
-           : `Goes out ${esc(localStamp(iso))}`));
-    // The same wall clock twelve hours on — the AM/PM segment's other reading.
-    const pm = past ? new Date(new Date(iso).getTime() + 12 * 3600 * 1000) : null;
-    if (pm && pm > new Date()){
-      const fix = el("button", "preset", `Did you mean ${esc(localStamp(pm.toISOString()))}?`);
-      fix.onclick = () => { input.value = localInputValue(pm); drawWhen(); };
-      when.appendChild(fix);
-    }
-    go.disabled = !iso || past;
-  }
-  input.oninput = drawWhen;
-  drawWhen();
-
-  go.onclick = async () => {
-    const send_at = sendAtISO(input.value);
-    if (!send_at){ toast("Pick a date and time first."); return; }
-    if (new Date(send_at) <= new Date()){
-      toast(`${localStamp(send_at)} has already passed — check the date and the AM/PM segment.`);
-      drawWhen();
-      return;
-    }
-    go.disabled = cancel.disabled = true; go.textContent = "Scheduling…";
-    let ok = 0; const failures = [];
-    for (const r of rows){
-      try {
-        const res = await fetch(`/api/prospects/${r.id}/schedule`, {method:"POST",
-          headers:{"Content-Type":"application/json"}, body: JSON.stringify({ send_at })});
-        if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
-        ok++;
-      } catch (e){ failures.push(`${r.company}: ${e.message}`); }
-    }
-    pop.remove();
+  const btn = $("#queueAllBtn"); btn.disabled = true;
+  try {
+    const res = await fetch("/api/outreach/queue-ready", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({ ids: ready.map(r => r.id) })});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
     picked.clear(); drawPicks();
     document.querySelectorAll("#o-active .pick input").forEach(c => c.checked = false);
-    if (ok) toast(`${plural(ok, "email", "emails")} scheduled for ${localStamp(send_at)}.`);
-    failures.slice(0, 3).forEach(f => toast("Couldn't schedule — " + f));
-    loadActive(); loadSchedulerStatus();
-  };
-  row.append(cancel, go);
-  pop.appendChild(row);
+    drawQueueJob(await res.json());
+    watchQueueJob(true);
+  } catch (e){ toast("Couldn't queue: " + e.message); btn.disabled = false; }
+};
 
-  document.body.appendChild(pop);
-  const box = anchor.getBoundingClientRect();
-  // Anchored under the button, nudged left so a narrow window can't clip it.
-  pop.style.top = (window.scrollY + box.bottom + 6) + "px";
-  pop.style.left = (window.scrollX + Math.max(8, Math.min(box.left, window.innerWidth - pop.offsetWidth - 12))) + "px";
-  setTimeout(() => document.addEventListener("click", function away(ev){
-    if (!pop.contains(ev.target)){ pop.remove(); document.removeEventListener("click", away); }
-  }), 0);
-}
-
-function drawSendJob(j){
-  const prog = $("#sendProgress"), btn = $("#sendAllBtn");
+function drawQueueJob(j){
+  const prog = $("#queueProgress"), btn = $("#queueAllBtn");
   prog.classList.toggle("on", !!j.running);
   if (j.running){
-    btn.disabled = true; btn.textContent = "➤ Sending…";
+    btn.disabled = true; btn.textContent = "◷ Queueing…";
     prog.textContent = j.total ? `${j.done}/${j.total}${j.current ? " · " + j.current : ""}` : "starting…";
   } else {
-    btn.disabled = false; btn.textContent = sendLabel(); prog.textContent = "";
+    btn.disabled = false; btn.textContent = queueLabel(); prog.textContent = "";
   }
 }
-function watchSendJob(started = false){
-  clearInterval(sendPoll);
+function watchQueueJob(started = false){
+  clearInterval(queuePoll);
   let lastDone = -1, ours = started;
-  sendPoll = setInterval(async () => {
-    let j; try { j = await fetch("/api/outreach/send-status").then(r=>r.json()); } catch { return; }
-    drawSendJob(j);
+  queuePoll = setInterval(async () => {
+    let j; try { j = await fetch("/api/outreach/queue-status").then(r=>r.json()); } catch { return; }
+    drawQueueJob(j);
     if (j.done !== lastDone){ lastDone = j.done; loadActive(); }
     if (j.running){ ours = true; return; }
-    clearInterval(sendPoll);
-    loadOutreach();                          // sent counters + To do / Sent
+    clearInterval(queuePoll);
+    loadActive(); loadSchedulerStatus();
     if (!ours) return;
-    if (j.error) toast("Sending failed: " + j.error);
-    else toast(`Sent ${j.sent} of ${j.total}` + (j.skipped ? `, ${j.skipped} already sent` : "") +
-               (j.failed ? `, ${j.failed} failed — ${j.last_error}` : "") +
-               (j.aborted ? " (stopped early — Gmail down?)" : "") + ".");
+    if (j.error){ toast("Queueing failed: " + j.error); return; }
+    const when = !j.queued ? ""
+      : j.queued === 1 ? ` — it goes out ${localStamp(j.first_at)}`
+      : ` — going out from ${localStamp(j.first_at)} to ${localStamp(j.last_at)}`;
+    toast(`Queued ${j.queued} of ${j.total}${when}` +
+          (j.skipped ? `, ${j.skipped} already queued or sent` : "") +
+          (j.failed ? `, ${j.failed} failed — ${j.last_error}` : "") +
+          (j.aborted ? " (stopped early — scheduler down?)" : "") + ".");
   }, 2000);
 }
 
@@ -1522,29 +1402,6 @@ function localStamp(iso){
   return new Date(iso).toLocaleString(undefined,
     {weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit",
      hourCycle:"h23"});
-}
-
-// An <input type="datetime-local"> wants local wall-clock text, not an ISO
-// instant — and the value it gives back is read the same way (see sendAtISO).
-function localInputValue(d){
-  const p = n => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-// The picker's wall-clock text as a real instant with this browser's offset, so
-// "10:00" means 10:00 here regardless of where the scheduler box thinks it is.
-function sendAtISO(value){
-  const d = new Date(value);
-  return isNaN(d) ? null : d.toISOString();
-}
-
-// The next occurrence of a weekday at a given hour (1 = Monday), always in the
-// future — "Monday 10:00" clicked on a Monday afternoon means *next* Monday.
-function nextWeekday(dow, hour){
-  const d = new Date();
-  d.setSeconds(0, 0); d.setHours(hour, 0);
-  do { d.setDate(d.getDate() + 1); } while (d.getDay() !== dow);
-  return d;
 }
 
 function prospectRow(r){
@@ -1897,20 +1754,20 @@ function renderEmail(id, out, email, tools){
   // offer the way back rather than letting edits fail on save.
   if (email.scheduled_at){
     subjInput.readOnly = ta.readOnly = true;
-    ta.title = subjInput.title = "Scheduled — cancel it to edit this email";
+    ta.title = subjInput.title = "Queued — cancel it to edit this email";
     tools.replaceChildren(contactSlot);           // no redrafting while queued
     const bar = el("div", "sched-bar");
     bar.appendChild(el("div", "txt",
-      `Scheduled for <b>${esc(localStamp(email.scheduled_at))}</b> — it goes out from the scheduler, even with this laptop closed.`));
-    const unsched = el("button", "icon-btn", "✕ Cancel schedule");
-    unsched.title = "Take it off the scheduler so you can edit or send it yourself";
+      `Queued for <b>${esc(localStamp(email.scheduled_at))}</b> — it goes out from the scheduler, even with this laptop closed.`));
+    const unsched = el("button", "icon-btn", "✕ Cancel");
+    unsched.title = "Take it off the scheduler so you can edit it, then queue it again";
     unsched.onclick = async () => {
       unsched.disabled = true;
       try {
         const res = await fetch(`/api/prospects/${id}/schedule`, {method: "DELETE"});
         if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || res.statusText); }
         renderEmail(id, out, {...email, scheduled_at: null, scheduler_job_id: null}, tools);
-        toast("Schedule cancelled — the draft is editable again.");
+        toast("Taken off the queue — the draft is editable again.");
         refreshAfterDrawerChange();
       } catch (e){
         // Most likely it already went out; a refresh will show it in Sent.
