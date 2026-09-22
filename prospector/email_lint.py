@@ -16,7 +16,7 @@ import re
 
 from .agent import SELF_INTRO, SENDER_NAME, SIGNATURE_LINKS
 
-# The fixed opener of the ask (playbook beat 5). Spanish only — the playbook
+# The fixed opener of the ask (playbook beat 4). Spanish only — the playbook
 # defines no English equivalent.
 ASK_OPENER = {"spanish": "¿Os cuadra agendar una llamada de 20 minutos para"}
 

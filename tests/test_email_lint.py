@@ -13,9 +13,9 @@ def body(observation="Vi que en vuestra web decís que vuestros reclutadores son
          ask="¿Os cuadra agendar una llamada de 20 minutos para comentarlo? Si ya lo "
              "tenéis cubierto, quedo a vuestra disposición para otra ocasión.",
          intro=SELF_INTRO["spanish"], signature=f"{SENDER_NAME}\n{SIGNATURE_LINKS}"):
-    return (f"Buenas,\n\n{intro}\n\n{observation}\n\n"
-            "Lo que hago en estos casos es montar un agente que se encargue justo de "
-            f"esa tarea.\n\n{ask}\n\nUn saludo,\n{signature}")
+    return (f"Buenas,\n\n{observation}\n\n{intro} Para un caso como el vuestro "
+            "montaría un agente que se encargue de ese flujo concreto; esto suele "
+            f"resolverse en un par de semanas.\n\n{ask}\n\nUn saludo,\n{signature}")
 
 
 def rules(issues):
@@ -28,7 +28,7 @@ def test_clean_email_passes():
 
 def test_fixed_lines_survive_rewrapping():
     rewrapped = body().replace(SELF_INTRO["spanish"],
-                               SELF_INTRO["spanish"].replace(" soy ", "\nsoy "))
+                               SELF_INTRO["spanish"].replace(" y me ", "\ny me "))
     assert lint_email(SUBJECT, rewrapped) == []
 
 
