@@ -117,7 +117,9 @@ The dashboard has three tabs:
   numbers: sent today, this week, total, replies and reply rate, a 14-day
   sent/replied bar chart, and a recent-sends list. **Check replies** polls your
   sent threads for responses. Requires a one-time Gmail connection —
-  see [docs/gmail-setup.md](docs/gmail-setup.md).
+  see [docs/gmail-setup.md](docs/gmail-setup.md). Before sending at volume, read
+  [docs/email-deliverability.md](docs/email-deliverability.md): daily limits,
+  send times, and handling unsubscribes.
 
 Each prospect row opens a detail drawer (pain points → agent solutions, buying
 signals, sources). Runs stream their results into their group as each company
