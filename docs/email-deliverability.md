@@ -65,7 +65,7 @@ Send so the email arrives just before the person sits down to read their inbox.
 - **Best days:** Tuesday, Wednesday, Thursday.
 - **Best times (Madrid time):** **08:30–10:30**, then **16:00–17:30** when people are
   back from lunch.
-- **Avoid:** Monday morning (weekend backlog), Friday afternoon, weekends, and
+- **Avoid:** Monday morning (weekend backlog), Fridays, weekends, and
   14:00–16:00.
 - **Avoid these periods completely:** August, 23 Dec – 7 Jan, Semana Santa, and
   local holidays in the prospect's city (Fallas in Valencia, Sant Joan in
