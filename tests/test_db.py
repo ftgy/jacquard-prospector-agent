@@ -687,3 +687,21 @@ def test_no_followup_due_after_a_reply_or_past_the_schedule(monkeypatch):
     monkeypatch.setenv("FOLLOWUP_DAYS", "off")
     assert db.followup_due_at({"sent_at": "2026-01-01T00:00:00+00:00", "replied_at": None,
                                "followup_at": None, "n_sends": 1}) is None
+
+
+def test_calls_do_not_leak_database_connections():
+    # sqlite3's `with conn:` doesn't close; with the garbage collector idle, each
+    # call used to leave its connection (and file descriptors) open.
+    import gc
+    import os
+
+    db.insert_prospect(make_record("Acme"))
+    gc.disable()
+    try:
+        before = len(os.listdir("/proc/self/fd"))
+        for _ in range(50):
+            db.list_prospects()
+            db.active_contacts()
+        assert len(os.listdir("/proc/self/fd")) <= before
+    finally:
+        gc.enable()

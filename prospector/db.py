@@ -11,11 +11,14 @@ Threads: the web server runs research on background threads while HTTP handlers
 read concurrently. Each call opens its own short-lived connection
 (check_same_thread=False) and WAL journaling keeps readers unblocked by the
 writer. sqlite3's module-level access is serialized, so a connection-per-call keeps
-this simple and safe for our low write volume.
+this simple and safe for our low write volume. Each connection is closed when
+its call returns (see _connect).
 """
 
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -39,12 +42,26 @@ def _now() -> str:
 _N_SENDS = "(SELECT COUNT(*) FROM sends WHERE sends.prospect_id = prospects.id) AS n_sends"
 
 
-def _connect() -> sqlite3.Connection:
+@contextmanager
+def _connect() -> Iterator[sqlite3.Connection]:
+    """A connection for one call: committed on success, rolled back on error,
+    and always closed.
+
+    sqlite3's own `with conn:` only commits and leaves the connection open. The
+    connection is in a reference cycle, so only the garbage collector ever frees
+    it. In a quiet process that can take hours, and the file descriptors pile
+    up until SQLite reports "unable to open database file". That is how the
+    prospector-scheduler service went down.
+    """
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db() -> None:
