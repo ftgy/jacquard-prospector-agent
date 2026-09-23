@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from . import db
 from .config import (
     describe_target,
+    get_auto_draft_buffer,
     get_auto_queue_interval,
     get_auto_queue_target,
     load_env,
@@ -54,9 +55,10 @@ async def lifespan(app: FastAPI):
     from . import service
     target = get_auto_queue_target()
     if target and scheduler_enabled():
-        service.start_auto_queue(target, get_auto_queue_interval())
+        buffer = get_auto_draft_buffer()
+        service.start_auto_queue(target, get_auto_queue_interval(), buffer)
         print(f"Auto-queue on: topping the scheduler up to {target} "
-              f"every {get_auto_queue_interval():g} min")
+              f"every {get_auto_queue_interval():g} min, {buffer} ready in reserve")
     yield
     service.stop_auto_queue()
 

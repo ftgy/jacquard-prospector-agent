@@ -594,3 +594,28 @@ def test_auto_queue_leaves_follow_ups_alone(auto, monkeypatch):
     assert out["queued"] == 0 and auto.drafted == [] and auto.jobs == {}
     service.queue_ready()                         # "Queue all" still sends it
     assert queued_subjects(auto) == ["re"]
+
+
+def test_auto_queue_keeps_a_reserve_of_ready_drafts(auto):
+    ready("A")
+    for n in range(6):
+        marked(f"M{n}")
+    out = service.auto_queue_tick(2, client=object(), buffer=3)
+    # Scheduler takes A plus one fresh draft; three more stay ready in reserve.
+    assert auto.drafted == ["M0", "M1", "M2", "M3"]
+    assert out["queued"] == 2 and out["ready"] == 3
+
+
+def test_auto_queue_reserve_does_not_count_drafts_needing_review(auto):
+    blocked = ready("Old")
+    db.set_email_review(blocked, {"issues": [], "remaining": [{"rule": "x"}], "error": None})
+    marked("M0"), marked("M1")
+    out = service.auto_queue_tick(0, client=object(), buffer=2)
+    assert auto.drafted == ["M0", "M1"] and out["ready"] == 2 and out["queued"] == 0
+
+
+def test_auto_queue_full_reserve_drafts_nothing(auto):
+    ready("A"), ready("B")
+    marked("M0")
+    out = service.auto_queue_tick(0, client=object(), buffer=2)
+    assert auto.drafted == [] and out["ready"] == 2

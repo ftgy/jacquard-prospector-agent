@@ -1007,26 +1007,31 @@ def queue_job_status() -> dict:
 # are already 'ready', then drafts more from To do and queues the ones that pass
 # review. A draft that needs review is never queued by the loop — it waits for a
 # hand approval, after which it's 'ready' like any other. Follow-ups stay manual:
-# the loop neither drafts nor queues them.
+# the loop neither drafts nor queues them. With AUTO_DRAFT_BUFFER=m it also keeps
+# m 'ready' drafts in reserve beyond what the scheduler holds, so there's always
+# a stock to read over and to queue from.
 
 # The loop's last tick and whether one is running, for GET /api/outreach/auto-queue.
 _auto_queue: dict = {"running": False}
 _auto_queue_stop = threading.Event()
 
 
-def auto_queue_tick(target: int, client: anthropic.Anthropic | None = None) -> dict:
-    """One top-up pass: bring the scheduler's pending queue up to `target`.
+def auto_queue_tick(target: int, client: anthropic.Anthropic | None = None,
+                    buffer: int = 0) -> dict:
+    """One top-up pass: bring the scheduler's pending queue up to `target`, then
+    draft until `buffer` ready first emails are left over, not yet queued.
 
     Reconciles finished jobs first, so a sent email frees its slot and a
     follow-up counts from the right day. Skips the pass (reporting why) when the
     scheduler is unreachable, or a draft or queue run is already going — the
     next tick tries again. Returns {'pending', 'queued', 'drafted', 'blocked',
-    'skipped', 'errors'}; 'skipped' is the reason nothing was attempted.
+    'ready', 'skipped', 'errors'}; 'ready' is the reserve left after the pass,
+    'skipped' the reason nothing was attempted.
     """
     from . import scheduler
 
     out = {"pending": None, "queued": 0, "drafted": 0, "blocked": 0,
-           "skipped": None, "errors": []}
+           "ready": None, "skipped": None, "errors": []}
     with _draft_job_guard:
         if _draft_job.get("running") or _queue_job.get("running"):
             out["skipped"] = "a draft or queue run from the dashboard is going"
@@ -1054,11 +1059,15 @@ def auto_queue_tick(target: int, client: anthropic.Anthropic | None = None) -> d
                 out["errors"].append(counts["last_error"])
             return target - out["pending"] - out["queued"]
 
-        need = top_up()
-        if need > 0:
-            drafted = draft_queued(need, client=client or make_client(), followups=False)
+        # Whatever the scheduler still lacks comes out of the reserve, so draft
+        # both: the shortfall and what brings the reserve back up to `buffer`.
+        short = top_up()
+        want = short + max(0, buffer - len(sendable(followups=False)))
+        if want > 0:
+            drafted = draft_queued(want, client=client or make_client(), followups=False)
             out["drafted"], out["blocked"] = drafted["ok"], drafted["blocked"]
             top_up()
+        out["ready"] = len(sendable(followups=False))
     except (Exception, SystemExit) as e:     # SystemExit: API key missing
         out["errors"].append((friendly_api_error(e) or repr(e)).splitlines()[0][:200])
     finally:
@@ -1067,22 +1076,23 @@ def auto_queue_tick(target: int, client: anthropic.Anthropic | None = None) -> d
     return out
 
 
-def _auto_queue_loop(target: int, interval_s: float) -> None:
+def _auto_queue_loop(target: int, interval_s: float, buffer: int) -> None:
     while not _auto_queue_stop.is_set():
         started = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        result = auto_queue_tick(target)
+        result = auto_queue_tick(target, buffer=buffer)
         _auto_queue.update(last_run=started, last_result=result)
         print(f"[auto-queue] {started} {result}", flush=True)
         _auto_queue_stop.wait(interval_s)
 
 
-def start_auto_queue(target: int, interval_minutes: float) -> None:
+def start_auto_queue(target: int, interval_minutes: float, buffer: int = 0) -> None:
     """Start the top-up loop on a daemon thread (server startup). The first
     pass runs right away."""
     _auto_queue_stop.clear()
-    _auto_queue.update(enabled=True, target=target, interval_minutes=interval_minutes)
-    threading.Thread(target=_auto_queue_loop, args=(target, interval_minutes * 60),
-                     daemon=True).start()
+    _auto_queue.update(enabled=True, target=target, buffer=buffer,
+                       interval_minutes=interval_minutes)
+    threading.Thread(target=_auto_queue_loop,
+                     args=(target, interval_minutes * 60, buffer), daemon=True).start()
 
 
 def stop_auto_queue() -> None:
@@ -1090,7 +1100,7 @@ def stop_auto_queue() -> None:
 
 
 def auto_queue_status() -> dict:
-    """{'enabled', 'target', 'interval_minutes', 'running', 'last_run',
+    """{'enabled', 'target', 'buffer', 'interval_minutes', 'running', 'last_run',
     'last_result'} — 'enabled' is False when AUTO_QUEUE_TARGET is off."""
     return {"enabled": False, **_auto_queue}
 

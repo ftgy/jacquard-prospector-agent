@@ -148,6 +148,14 @@ def get_auto_queue_target() -> int:
     return int(raw) if raw.isdigit() else 0
 
 
+def get_auto_draft_buffer() -> int:
+    """Ready first-email drafts the auto-queue loop keeps in reserve beyond what
+    the scheduler holds: AUTO_DRAFT_BUFFER=20. Unset/0: draft only to fill the
+    scheduler."""
+    raw = os.environ.get("AUTO_DRAFT_BUFFER", "").strip()
+    return int(raw) if raw.isdigit() else 0
+
+
 def get_auto_queue_interval() -> float:
     """Minutes between auto-queue passes. AUTO_QUEUE_INTERVAL, default 15."""
     try:

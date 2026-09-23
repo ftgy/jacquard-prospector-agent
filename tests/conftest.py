@@ -28,7 +28,7 @@ def temp_db(tmp_path, monkeypatch):
     # The server lifespan loads the real .env, but only fills unset variables:
     # set these empty so no test starts the auto-queue loop, auto-marks, or
     # reaches the live scheduler (which sends real email).
-    for var in ("AUTO_QUEUE_TARGET", "AUTO_MARK_TIERS", "SCHEDULER_URL", "SCHEDULER_TOKEN"):
+    for var in ("AUTO_QUEUE_TARGET", "AUTO_DRAFT_BUFFER", "AUTO_MARK_TIERS", "SCHEDULER_URL", "SCHEDULER_TOKEN"):
         monkeypatch.setenv(var, "")
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
     db.init_db()
