@@ -49,7 +49,7 @@ sys.path.insert(0, str(ROOT))  # find prospector/
 from prospector import db
 from prospector.budget import llm_budget
 from prospector.agent import discover_candidates, run_prospect, suggest_niches
-from prospector.config import load_env, make_client
+from prospector.config import get_auto_mark_tiers, load_env, make_client
 from prospector.icp import ICP
 from prospector.service import categorize_run, friendly_api_error
 
@@ -151,7 +151,8 @@ def research_batch(client, run_id: int, candidates: list,
             log.warning("  ✗ %s — %s", company, str(e).splitlines()[0][:120])
         if cand.get("website"):  # keep the discovered domain for future dedup
             rec.setdefault("website", cand["website"])
-        db.insert_prospect(rec, run_id=run_id)
+        if db.mark_if_fit(db.insert_prospect(rec, run_id=run_id), get_auto_mark_tiers()):
+            log.info("    marked to contact")
         db.bump_run_progress(run_id)
         if consecutive >= MAX_CONSECUTIVE_ERRORS:
             log.error("Aborting batch after %d consecutive failures — endpoint "

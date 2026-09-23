@@ -792,6 +792,36 @@ def set_queued(prospect_id: int, queued: bool) -> bool:
         return cur.rowcount > 0
 
 
+def mark_if_fit(prospect_id: int, tiers: set[str]) -> bool:
+    """Mark a freshly researched prospect "to contact" if its tier is in `tiers`
+    (AUTO_MARK_TIERS), so the auto-queue loop drafts and sends it with no hand
+    in between. Returns whether it was marked.
+
+    Skipped when the research failed, or when the same company — by name or
+    website — is already marked or contacted under another row: re-researching
+    a company must not get it a second cold email.
+    """
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT company, domain, contact_website, tier, error, queued_at, sent_at "
+            "FROM prospects WHERE id=?", (prospect_id,)).fetchone()
+        if (row is None or row["error"] or row["tier"] not in tiers
+                or row["queued_at"] or row["sent_at"]):
+            return False
+        name = normalize_company(row["company"])
+        domains = {normalize_domain(d) for d in (row["domain"], row["contact_website"])} - {""}
+        for other in conn.execute(
+                "SELECT company, domain, contact_website FROM prospects "
+                "WHERE id != ? AND (queued_at IS NOT NULL OR sent_at IS NOT NULL)",
+                (prospect_id,)):
+            if (normalize_company(other["company"]) == name
+                    or domains & {normalize_domain(other["domain"]),
+                                  normalize_domain(other["contact_website"])}):
+                return False
+        conn.execute("UPDATE prospects SET queued_at=? WHERE id=?", (_now(), prospect_id))
+        return True
+
+
 def queued_needing_draft(limit: int | None = 10, followups: bool = True) -> list[dict]:
     """The auto-draft worklist: queued, not sent, and either never drafted or
     drafted but not yet reviewed (the review errored — e.g. the proxy was down).

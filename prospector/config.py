@@ -156,6 +156,13 @@ def get_auto_queue_interval() -> float:
         return 15.0
 
 
+def get_auto_mark_tiers() -> set[str]:
+    """Tiers a freshly researched company is marked "to contact" in, with no
+    review by hand: AUTO_MARK_TIERS=A,B. Unset (the default) marks nothing."""
+    raw = os.environ.get("AUTO_MARK_TIERS", "")
+    return {t.strip().upper() for t in raw.split(",") if t.strip()}
+
+
 def get_followup_days() -> list[int]:
     """The follow-up schedule: how many days after each email the next follow-up
     is due, one entry per follow-up. FOLLOWUP_DAYS=4,7 (the default) means the

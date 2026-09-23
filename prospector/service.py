@@ -32,6 +32,7 @@ from .agent import (
 from .config import (
     ROOT,
     email_review_enabled,
+    get_auto_mark_tiers,
     get_output_language,
     get_review_model,
     make_client,
@@ -86,7 +87,8 @@ def run_batch(client: anthropic.Anthropic, prospects: list[dict], icp: str = ICP
             record = {"company": company, "error": friendly_api_error(e)}
         if p.get("website"):  # keep the discovered domain for future dedup
             record.setdefault("website", p["website"])
-        db.insert_prospect(record, run_id=run_id)
+        pid = db.insert_prospect(record, run_id=run_id)
+        db.mark_if_fit(pid, get_auto_mark_tiers())
         if run_id is not None:
             db.bump_run_progress(run_id)
         results.append(record)

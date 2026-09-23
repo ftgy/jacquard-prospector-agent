@@ -705,3 +705,39 @@ def test_calls_do_not_leak_database_connections():
         assert len(os.listdir("/proc/self/fd")) <= before
     finally:
         gc.enable()
+
+
+# --- Auto-mark: fit tiers go straight to "to contact" ------------------------
+
+def test_mark_if_fit_marks_only_listed_tiers():
+    a = db.insert_prospect(make_record("A Co", tier="A"))
+    c = db.insert_prospect(make_record("C Co", tier="C"))
+    assert db.mark_if_fit(a, {"A", "B"}) is True
+    assert db.mark_if_fit(c, {"A", "B"}) is False
+    assert db.get_prospect(a)["queued_at"] and not db.get_prospect(c)["queued_at"]
+
+
+def test_mark_if_fit_is_off_without_tiers():
+    a = db.insert_prospect(make_record("A Co"))
+    assert db.mark_if_fit(a, set()) is False
+
+
+def test_mark_if_fit_skips_failed_research():
+    e = db.insert_prospect({"company": "Broken", "error": "timeout"})
+    assert db.mark_if_fit(e, {"A"}) is False
+
+
+def test_mark_if_fit_skips_a_company_already_contacted():
+    first = db.insert_prospect(make_record("Acme", website="https://acme.es"))
+    db.mark_sent(first, "m", "t")
+    by_name = db.insert_prospect(make_record(" ACME "))
+    by_site = db.insert_prospect(make_record("Acme SL", website="www.acme.es/contacto"))
+    assert db.mark_if_fit(by_name, {"A"}) is False
+    assert db.mark_if_fit(by_site, {"A"}) is False
+
+
+def test_mark_if_fit_marks_a_rerun_only_once():
+    one = db.insert_prospect(make_record("Esan"))
+    two = db.insert_prospect(make_record("Esan"))
+    assert db.mark_if_fit(one, {"A"}) is True
+    assert db.mark_if_fit(two, {"A"}) is False
