@@ -494,8 +494,8 @@ def auto(fake, monkeypatch):
                                            for j in fake.jobs.values())}))
     drafted = []
 
-    def draft_queued(limit, client=None, **kw):
-        work = db.queued_needing_draft(limit)
+    def draft_queued(limit, client=None, followups=True, **kw):
+        work = db.queued_needing_draft(limit, followups)
         counts = {"ok": 0, "blocked": 0}
         for w in work:
             drafted.append(w["company"])
@@ -577,3 +577,20 @@ def test_auto_queue_target_config(monkeypatch):
     for raw, want in [("10", 10), ("", 0), ("off", 0), ("0", 0)]:
         monkeypatch.setenv("AUTO_QUEUE_TARGET", raw)
         assert get_auto_queue_target() == want
+
+
+def test_auto_queue_leaves_follow_ups_alone(auto, monkeypatch):
+    monkeypatch.setenv("FOLLOWUP_DAYS", "1")
+    due = ready("Due")
+    db.mark_sent(due, "m0", "th0", sent_at=soon(days=-3))     # follow-up due
+    drafted = ready("Drafted")
+    db.mark_sent(drafted, "m1", "th1", sent_at=soon(days=-3))
+    db.set_followup_draft(drafted, "re", "body", "spanish")
+    db.set_email_review(drafted, {"issues": [], "remaining": [], "error": None})
+    assert [r["status"] for r in db.active_contacts()] == ["ready", "followup-due"]
+
+    out = service.auto_queue_tick(5, client=object())
+
+    assert out["queued"] == 0 and auto.drafted == [] and auto.jobs == {}
+    service.queue_ready()                         # "Queue all" still sends it
+    assert queued_subjects(auto) == ["re"]

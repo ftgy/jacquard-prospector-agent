@@ -792,13 +792,13 @@ def set_queued(prospect_id: int, queued: bool) -> bool:
         return cur.rowcount > 0
 
 
-def queued_needing_draft(limit: int | None = 10) -> list[dict]:
+def queued_needing_draft(limit: int | None = 10, followups: bool = True) -> list[dict]:
     """The auto-draft worklist: queued, not sent, and either never drafted or
     drafted but not yet reviewed (the review errored — e.g. the proxy was down).
     Pending follow-ups count too (they always have a draft, so only a failed
     review puts them here), and so do sent prospects whose follow-up is due
     (after the first emails; they get a full follow-up draft).
-    limit=None returns all of them.
+    limit=None returns all of them; followups=False leaves follow-ups out.
 
     Returns [{'id', 'company', 'drafted'}], oldest mark first; 'drafted' tells the
     caller it only needs to re-run the review, not write a new draft.
@@ -806,7 +806,8 @@ def queued_needing_draft(limit: int | None = 10) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, company, email_subject, email_review, approved_at FROM prospects "
-            "WHERE ((queued_at IS NOT NULL AND sent_at IS NULL) OR followup_at IS NOT NULL) "
+            "WHERE ((queued_at IS NOT NULL AND sent_at IS NULL) "
+            + ("OR followup_at IS NOT NULL" if followups else "") + ") "
             # A scheduled draft is frozen on the scheduler: redrafting it here
             # would send the old text and show the new one.
             "AND scheduled_at IS NULL "
@@ -819,8 +820,9 @@ def queued_needing_draft(limit: int | None = 10) -> list[dict]:
             work.append({"id": r["id"], "company": r["company"], "drafted": False})
         elif (review is None or review.get("error")) and not r["approved_at"]:
             work.append({"id": r["id"], "company": r["company"], "drafted": True})
-    work += [{"id": r["id"], "company": r["company"], "drafted": False}
-             for r in _followups_due()]
+    if followups:
+        work += [{"id": r["id"], "company": r["company"], "drafted": False}
+                 for r in _followups_due()]
     return work if limit is None else work[:limit]
 
 

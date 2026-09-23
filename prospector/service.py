@@ -539,7 +539,7 @@ def release_draft_lock(fh) -> None:
 
 def draft_queued(limit: int | None = 10, client: anthropic.Anthropic | None = None,
                  log=None, on_progress=None, pace: float = DRAFT_PACE_SECONDS,
-                 ids: list[int] | None = None) -> dict:
+                 ids: list[int] | None = None, followups: bool = True) -> dict:
     """Draft + review emails for up to `limit` queued prospects. Caller holds the lock.
 
     Never-drafted prospects get a full draft (draft_email_for); ones whose review
@@ -551,7 +551,8 @@ def draft_queued(limit: int | None = 10, client: anthropic.Anthropic | None = No
     and once at the end with current=None. A burst of consecutive failures
     (including failed reviews — usually the Anthropic side being down) aborts the
     run. `ids` drafts exactly those prospects instead (one pass, full redraft
-    each — see db.prospects_to_draft), ignoring `limit`. Returns {'total','done',
+    each — see db.prospects_to_draft), ignoring `limit`. followups=False skips
+    follow-ups, drafting first emails only. Returns {'total','done',
     'ok','blocked','failed','aborted'}; 'blocked' drafts were stored but failed
     review or rule checks.
     """
@@ -562,8 +563,9 @@ def draft_queued(limit: int | None = 10, client: anthropic.Anthropic | None = No
         if ids is not None:
             return [] if tried else db.prospects_to_draft(ids)
         if limit is not None:
-            return db.queued_needing_draft(limit)
-        return [w for w in db.queued_needing_draft(None) if w["id"] not in tried]
+            return db.queued_needing_draft(limit, followups)
+        return [w for w in db.queued_needing_draft(None, followups)
+                if w["id"] not in tried]
 
     work = next_work()
     counts = {"total": len(work), "done": 0, "ok": 0, "blocked": 0, "failed": 0,
@@ -897,17 +899,19 @@ QUEUE_MAX_CONSECUTIVE_ERRORS = 3  # abort the batch — the scheduler is likely 
 _queue_job: dict = {"running": False}
 
 
-def sendable(ids: list[int] | None = None) -> list[dict]:
+def sendable(ids: list[int] | None = None, followups: bool = True) -> list[dict]:
     """The "Queue all" worklist: pipeline rows whose status is 'ready' (reviewed,
-    no broken rules, has a contact), limited to `ids` when given. Same order as
-    the Pipeline table. Returns [{'id', 'company'}]."""
+    no broken rules, has a contact), limited to `ids` when given, first emails
+    only when not `followups`. Same order as the Pipeline table. Returns
+    [{'id', 'company'}]."""
     wanted = set(ids) if ids is not None else None
     return [{"id": r["id"], "company": r["company"]} for r in db.active_contacts()
-            if r["status"] == "ready" and (wanted is None or r["id"] in wanted)]
+            if r["status"] == "ready" and (wanted is None or r["id"] in wanted)
+            and (followups or not r["followup"])]
 
 
 def queue_ready(ids: list[int] | None = None, on_progress=None,
-                limit: int | None = None) -> dict:
+                limit: int | None = None, followups: bool = True) -> dict:
     """Hand every ready draft (or just the ready ones of `ids`, or the first
     `limit` of them) to the scheduler, one by one, in Pipeline order, which is
     also the order they'll go out. A prospect sent or queued meanwhile is
@@ -918,7 +922,7 @@ def queue_ready(ids: list[int] | None = None, on_progress=None,
     'last_error', 'first_at', 'last_at'}; the last two are the send times of the
     first and last email queued.
     """
-    work = sendable(ids)[:limit]
+    work = sendable(ids, followups)[:limit]
     counts = {"total": len(work), "done": 0, "queued": 0, "skipped": 0, "failed": 0,
               "aborted": False, "last_error": None, "first_at": None, "last_at": None}
     consecutive = 0
@@ -1000,7 +1004,8 @@ def queue_job_status() -> dict:
 # and, while the scheduler holds fewer than n pending emails, queues drafts that
 # are already 'ready', then drafts more from To do and queues the ones that pass
 # review. A draft that needs review is never queued by the loop — it waits for a
-# hand approval, after which it's 'ready' like any other.
+# hand approval, after which it's 'ready' like any other. Follow-ups stay manual:
+# the loop neither drafts nor queues them.
 
 # The loop's last tick and whether one is running, for GET /api/outreach/auto-queue.
 _auto_queue: dict = {"running": False}
@@ -1041,7 +1046,7 @@ def auto_queue_tick(target: int, client: anthropic.Anthropic | None = None) -> d
             need = target - out["pending"] - out["queued"]
             if need <= 0:
                 return 0
-            counts = queue_ready(limit=need)
+            counts = queue_ready(limit=need, followups=False)
             out["queued"] += counts["queued"]
             if counts["last_error"]:
                 out["errors"].append(counts["last_error"])
@@ -1049,7 +1054,7 @@ def auto_queue_tick(target: int, client: anthropic.Anthropic | None = None) -> d
 
         need = top_up()
         if need > 0:
-            drafted = draft_queued(need, client=client or make_client())
+            drafted = draft_queued(need, client=client or make_client(), followups=False)
             out["drafted"], out["blocked"] = drafted["ok"], drafted["blocked"]
             top_up()
     except (Exception, SystemExit) as e:     # SystemExit: API key missing
