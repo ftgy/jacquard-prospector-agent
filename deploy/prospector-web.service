@@ -1,0 +1,26 @@
+# The dashboard as an always-on user service, with the auto-queue loop in it.
+# Install:
+#   cp deploy/prospector-web.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now prospector-web
+# Stop any hand-started run_server.py first: both bind 127.0.0.1:8082.
+# Research stays in its own unit (prospector-research): it follows the LiteLLM
+# budget, and stopping it must not take the dashboard down.
+
+[Unit]
+Description=Prospector dashboard (http://127.0.0.1:8082) and its auto-queue loop
+After=network-online.target prospector-tunnel.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+# No autoreload: a reload restarts the process and would cut a draft run or the
+# auto-queue loop off halfway. After pulling changes:
+#   systemctl --user restart prospector-web
+WorkingDirectory=/home/francisco/feina-dev/prospector-agent
+ExecStart=/home/francisco/feina-dev/prospector-agent/venv/bin/python -u run_server.py --no-reload
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
