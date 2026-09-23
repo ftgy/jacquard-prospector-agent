@@ -10,7 +10,7 @@ success rate — a single OK isn't proof the model is usable.
 Usage:
     python scripts/health_check.py                  # all listed models, 3 tries each
     python scripts/health_check.py -n 10            # 10 tries each (spot flakiness)
-    python scripts/health_check.py -m vertex_ai/claude-opus-4-8,gemini-3.7-flash
+    python scripts/health_check.py -m vertex_ai/claude-opus-4-8,gemini-3.8-flash
     python scripts/health_check.py --base-url http://host:4000 --api-key sk-...
 
 Endpoint + key are read from (in order): CLI flags, environment, then the

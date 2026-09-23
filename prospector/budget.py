@@ -19,7 +19,7 @@ from .config import get_base_url, load_env, use_system_ca_bundle
 # A model this key is denied (free 403 that still carries the budget headers).
 DEFAULT_FREE_PROBE = "qwen/qwen3-coder-30b-a3b-instruct"
 # Cheapest allowed model, for when the free probe stops carrying the headers.
-DEFAULT_PAID_PROBE = "gemini-3.7-flash"
+DEFAULT_PAID_PROBE = "gemini-3.8-flash"
 
 CACHE_SECONDS = 60
 _cache: dict = {"at": 0.0, "value": None}
