@@ -25,6 +25,11 @@ def temp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(service, "DRAFT_LOCK", tmp_path / "draft.lock")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    # The server lifespan loads the real .env, but only fills unset variables:
+    # set these empty so no test starts the auto-queue loop, auto-marks, or
+    # reaches the live scheduler (which sends real email).
+    for var in ("AUTO_QUEUE_TARGET", "AUTO_MARK_TIERS", "SCHEDULER_URL", "SCHEDULER_TOKEN"):
+        monkeypatch.setenv(var, "")
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
     db.init_db()
     return db
