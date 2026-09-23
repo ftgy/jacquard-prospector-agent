@@ -906,17 +906,19 @@ def sendable(ids: list[int] | None = None) -> list[dict]:
             if r["status"] == "ready" and (wanted is None or r["id"] in wanted)]
 
 
-def queue_ready(ids: list[int] | None = None, on_progress=None) -> dict:
-    """Hand every ready draft (or just the ready ones of `ids`) to the scheduler,
-    one by one, in Pipeline order, which is also the order they'll go out. A
-    prospect sent or queued meanwhile is skipped, never queued twice.
+def queue_ready(ids: list[int] | None = None, on_progress=None,
+                limit: int | None = None) -> dict:
+    """Hand every ready draft (or just the ready ones of `ids`, or the first
+    `limit` of them) to the scheduler, one by one, in Pipeline order, which is
+    also the order they'll go out. A prospect sent or queued meanwhile is
+    skipped, never queued twice.
     `on_progress(counts, current)` is called before each one and once at the
     end with current=None. Stops after QUEUE_MAX_CONSECUTIVE_ERRORS failures in
     a row. Returns {'total', 'done', 'queued', 'skipped', 'failed', 'aborted',
     'last_error', 'first_at', 'last_at'}; the last two are the send times of the
     first and last email queued.
     """
-    work = sendable(ids)
+    work = sendable(ids)[:limit]
     counts = {"total": len(work), "done": 0, "queued": 0, "skipped": 0, "failed": 0,
               "aborted": False, "last_error": None, "first_at": None, "last_at": None}
     consecutive = 0
@@ -955,7 +957,7 @@ def start_queue_ready_async(ids: list[int] | None = None) -> dict:
     from . import scheduler
 
     with _draft_job_guard:
-        if _queue_job.get("running"):
+        if _queue_job.get("running") or _auto_queue.get("running"):
             raise RuntimeError("Emails are already being queued.")
         if _draft_job.get("running"):
             raise RuntimeError("A draft run is in progress — wait for it to finish.")
@@ -990,6 +992,100 @@ def start_queue_ready_async(ids: list[int] | None = None) -> dict:
 def queue_job_status() -> dict:
     """The dashboard "Queue all" job's progress."""
     return dict(_queue_job)
+
+
+# --- Auto-queue: keep the scheduler's queue topped up ------------------------
+#
+# With AUTO_QUEUE_TARGET=n the server wakes every AUTO_QUEUE_INTERVAL minutes
+# and, while the scheduler holds fewer than n pending emails, queues drafts that
+# are already 'ready', then drafts more from To do and queues the ones that pass
+# review. A draft that needs review is never queued by the loop — it waits for a
+# hand approval, after which it's 'ready' like any other.
+
+# The loop's last tick and whether one is running, for GET /api/outreach/auto-queue.
+_auto_queue: dict = {"running": False}
+_auto_queue_stop = threading.Event()
+
+
+def auto_queue_tick(target: int, client: anthropic.Anthropic | None = None) -> dict:
+    """One top-up pass: bring the scheduler's pending queue up to `target`.
+
+    Reconciles finished jobs first, so a sent email frees its slot and a
+    follow-up counts from the right day. Skips the pass (reporting why) when the
+    scheduler is unreachable, or a draft or queue run is already going — the
+    next tick tries again. Returns {'pending', 'queued', 'drafted', 'blocked',
+    'skipped', 'errors'}; 'skipped' is the reason nothing was attempted.
+    """
+    from . import scheduler
+
+    out = {"pending": None, "queued": 0, "drafted": 0, "blocked": 0,
+           "skipped": None, "errors": []}
+    with _draft_job_guard:
+        if _draft_job.get("running") or _queue_job.get("running"):
+            out["skipped"] = "a draft or queue run from the dashboard is going"
+            return out
+        lock = acquire_draft_lock()
+        if lock is None:
+            out["skipped"] = "a draft run (cron or terminal) holds the lock"
+            return out
+        _auto_queue["running"] = True
+    try:
+        reconcile_scheduled()
+        status = scheduler.status()
+        if not status["connected"]:
+            out["skipped"] = status.get("reason") or "scheduler unreachable"
+            return out
+        out["pending"] = status["pending"]
+
+        def top_up():
+            need = target - out["pending"] - out["queued"]
+            if need <= 0:
+                return 0
+            counts = queue_ready(limit=need)
+            out["queued"] += counts["queued"]
+            if counts["last_error"]:
+                out["errors"].append(counts["last_error"])
+            return target - out["pending"] - out["queued"]
+
+        need = top_up()
+        if need > 0:
+            drafted = draft_queued(need, client=client or make_client())
+            out["drafted"], out["blocked"] = drafted["ok"], drafted["blocked"]
+            top_up()
+    except (Exception, SystemExit) as e:     # SystemExit: API key missing
+        out["errors"].append((friendly_api_error(e) or repr(e)).splitlines()[0][:200])
+    finally:
+        release_draft_lock(lock)
+        _auto_queue["running"] = False
+    return out
+
+
+def _auto_queue_loop(target: int, interval_s: float) -> None:
+    while not _auto_queue_stop.is_set():
+        started = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        result = auto_queue_tick(target)
+        _auto_queue.update(last_run=started, last_result=result)
+        print(f"[auto-queue] {started} {result}", flush=True)
+        _auto_queue_stop.wait(interval_s)
+
+
+def start_auto_queue(target: int, interval_minutes: float) -> None:
+    """Start the top-up loop on a daemon thread (server startup). The first
+    pass runs right away."""
+    _auto_queue_stop.clear()
+    _auto_queue.update(enabled=True, target=target, interval_minutes=interval_minutes)
+    threading.Thread(target=_auto_queue_loop, args=(target, interval_minutes * 60),
+                     daemon=True).start()
+
+
+def stop_auto_queue() -> None:
+    _auto_queue_stop.set()
+
+
+def auto_queue_status() -> dict:
+    """{'enabled', 'target', 'interval_minutes', 'running', 'last_run',
+    'last_result'} — 'enabled' is False when AUTO_QUEUE_TARGET is off."""
+    return {"enabled": False, **_auto_queue}
 
 
 def refresh_replies() -> dict:

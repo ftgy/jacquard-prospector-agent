@@ -480,3 +480,100 @@ def test_start_queue_ready_async_runs_job(fake, monkeypatch):
     final = service.queue_job_status()
     assert final["queued"] == 1 and final["error"] is None
     assert queued_subjects(fake) == ["subj A"]
+
+
+# --- Auto-queue: top the scheduler up to a target ----------------------------
+
+@pytest.fixture
+def auto(fake, monkeypatch):
+    """The fake scheduler reporting its pending jobs, and a drafter that turns
+    each queued prospect into a ready draft unless it's named "Blocked"."""
+    monkeypatch.setattr(scheduler, "status", lambda: (
+        {"connected": False, "reason": "box is down"} if fake.unavailable else
+        {"connected": True, "pending": sum(j["status"] == "pending"
+                                           for j in fake.jobs.values())}))
+    drafted = []
+
+    def draft_queued(limit, client=None, **kw):
+        work = db.queued_needing_draft(limit)
+        counts = {"ok": 0, "blocked": 0}
+        for w in work:
+            drafted.append(w["company"])
+            db.set_prospect_email(w["id"], f"subj {w['company']}", "body", "spanish")
+            remaining = [{"rule": "x"}] if w["company"] == "Blocked" else []
+            db.set_email_review(w["id"], {"issues": [], "remaining": remaining, "error": None})
+            db.set_prospect_contact(w["id"], "hola@x.es")
+            counts["blocked" if remaining else "ok"] += 1
+        return counts
+
+    monkeypatch.setattr(service, "draft_queued", draft_queued)
+    fake.drafted = drafted
+    return fake
+
+
+def marked(name) -> int:
+    pid = db.insert_prospect(make_record(name))
+    db.set_queued(pid, True)
+    return pid
+
+
+def test_auto_queue_queues_ready_drafts_before_drafting(auto):
+    ready("A"), ready("B")
+    marked("C")
+    out = service.auto_queue_tick(2, client=object())
+    assert sorted(queued_subjects(auto)) == ["subj A", "subj B"]
+    assert out["queued"] == 2 and auto.drafted == []
+
+
+def test_auto_queue_drafts_the_shortfall_and_queues_what_passes(auto):
+    ready("A")
+    marked("Blocked"), marked("C"), marked("D")
+    out = service.auto_queue_tick(3, client=object())
+    # Two short: drafts the next two in To do; Blocked needs review, so only C goes.
+    assert auto.drafted == ["Blocked", "C"]
+    assert sorted(queued_subjects(auto)) == ["subj A", "subj C"]
+    assert out["drafted"] == 1 and out["blocked"] == 1 and out["queued"] == 2
+
+
+def test_auto_queue_counts_what_the_scheduler_already_holds(auto):
+    for n in range(3):
+        service.schedule_outreach(ready(f"Q{n}"))
+    ready("A")
+    out = service.auto_queue_tick(3, client=object())
+    assert out["pending"] == 3 and out["queued"] == 0
+    assert len(auto.jobs) == 3
+
+
+def test_auto_queue_frees_slots_for_sent_jobs(auto):
+    service.schedule_outreach(ready("Sent"))
+    auto.complete(1)
+    ready("A")
+    out = service.auto_queue_tick(1, client=object())
+    assert out["pending"] == 0 and out["queued"] == 1
+    assert db.get_prospect(1)["email"]["sent_at"]      # reconciled first
+
+
+def test_auto_queue_waits_out_an_unreachable_scheduler(auto):
+    ready("A")
+    auto.unavailable = True
+    out = service.auto_queue_tick(5, client=object())
+    assert out["skipped"] == "box is down" and auto.drafted == []
+
+
+def test_auto_queue_yields_to_a_running_draft(auto):
+    ready("A")
+    lock = service.acquire_draft_lock()
+    try:
+        out = service.auto_queue_tick(5, client=object())
+    finally:
+        service.release_draft_lock(lock)
+    assert out["skipped"] and queued_subjects(auto) == []
+    service.auto_queue_tick(5, client=object())       # lock released again
+    assert queued_subjects(auto) == ["subj A"]
+
+
+def test_auto_queue_target_config(monkeypatch):
+    from prospector.config import get_auto_queue_target
+    for raw, want in [("10", 10), ("", 0), ("off", 0), ("0", 0)]:
+        monkeypatch.setenv("AUTO_QUEUE_TARGET", raw)
+        assert get_auto_queue_target() == want

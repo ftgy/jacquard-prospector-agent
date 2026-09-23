@@ -140,6 +140,22 @@ def scheduler_enabled() -> bool:
     return bool(get_scheduler_url() and get_scheduler_token())
 
 
+def get_auto_queue_target() -> int:
+    """How many pending emails the auto-queue loop keeps on the scheduler.
+    AUTO_QUEUE_TARGET=10 tops the queue up to 10; unset, 0 or "off" (the
+    default) leaves the loop off and queueing stays manual."""
+    raw = os.environ.get("AUTO_QUEUE_TARGET", "").strip().lower()
+    return int(raw) if raw.isdigit() else 0
+
+
+def get_auto_queue_interval() -> float:
+    """Minutes between auto-queue passes. AUTO_QUEUE_INTERVAL, default 15."""
+    try:
+        return max(1.0, float(os.environ.get("AUTO_QUEUE_INTERVAL", "15")))
+    except ValueError:
+        return 15.0
+
+
 def get_followup_days() -> list[int]:
     """The follow-up schedule: how many days after each email the next follow-up
     is due, one entry per follow-up. FOLLOWUP_DAYS=4,7 (the default) means the

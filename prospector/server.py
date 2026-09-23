@@ -22,7 +22,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import db
-from .config import describe_target, load_env, make_client
+from .config import (
+    describe_target,
+    get_auto_queue_interval,
+    get_auto_queue_target,
+    load_env,
+    make_client,
+    scheduler_enabled,
+)
 
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
@@ -44,7 +51,14 @@ async def lifespan(app: FastAPI):
     except SystemExit as e:
         print(f"[warn] API client not configured: {e}\n"
               "       Browsing works; launching new runs will fail until fixed.")
+    from . import service
+    target = get_auto_queue_target()
+    if target and scheduler_enabled():
+        service.start_auto_queue(target, get_auto_queue_interval())
+        print(f"Auto-queue on: topping the scheduler up to {target} "
+              f"every {get_auto_queue_interval():g} min")
     yield
+    service.stop_auto_queue()
 
 
 app = FastAPI(title="Prospector", lifespan=lifespan)
@@ -478,6 +492,13 @@ def api_queue_status():
     """Progress of the dashboard-started "Queue all" job."""
     from .service import queue_job_status
     return queue_job_status()
+
+
+@app.get("/api/outreach/auto-queue")
+def api_auto_queue_status():
+    """The auto-queue loop: whether it's on, its target, and its last pass."""
+    from .service import auto_queue_status
+    return auto_queue_status()
 
 
 @app.get("/api/outreach/blocked")
